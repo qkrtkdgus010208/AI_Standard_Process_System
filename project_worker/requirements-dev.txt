@@ -1,0 +1,5 @@
+# Jetson 장비가 아닌 일반 Ubuntu/Linux 개발 PC의 TEST_MODE용
+PyQt5>=5.15,<6
+opencv-python>=4.5
+pyserial>=3.5
+numpy>=1.19

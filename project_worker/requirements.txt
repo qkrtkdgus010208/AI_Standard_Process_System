@@ -1,0 +1,3 @@
+# Jetson에서는 PyQt5와 OpenCV를 apt로 설치하는 것을 권장합니다.
+pyserial>=3.5
+numpy>=1.19
