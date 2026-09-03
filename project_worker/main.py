@@ -37,6 +37,9 @@ class WorkerApplication:
         self.worker_window.work_controller.state_changed.connect(
             self.event_thread.enqueue_state
         )
+        self.event_thread.status_changed.connect(
+            self.worker_window.handle_monitoring_event_status
+        )
         self.worker_window.logout_requested.connect(self.logout)
         self.worker_window.show()
         if self.login_window is not None:

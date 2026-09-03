@@ -60,6 +60,38 @@ def send_json_request(payload: dict) -> dict:
     return json.loads(buffer.decode("utf-8").splitlines()[0])
 
 
+def check_monitoring_server_connection(timeout: float = 1.0) -> tuple[bool, str]:
+    """모니터링 PC(관제 서버)와의 TCP 연결 가능 여부를 확인합니다."""
+    if config.TEST_MODE:
+        return True, "테스트 모드 (서버 가상 연결)"
+    try:
+        with socket.create_connection(
+            (config.MONITORING_PC_IP, config.MONITORING_AUTH_PORT),
+            timeout=timeout,
+        ):
+            return True, f"관제 서버 연결 ({config.MONITORING_PC_IP}:{config.MONITORING_AUTH_PORT})"
+    except ConnectionRefusedError:
+        return False, f"서버 연결 거부 (포트 닫힘: {config.MONITORING_PC_IP}:{config.MONITORING_AUTH_PORT})"
+    except socket.timeout:
+        return False, f"서버 응답 시간 초과 ({config.MONITORING_PC_IP}:{config.MONITORING_AUTH_PORT})"
+    except OSError as e:
+        return False, f"서버 연결 실패 ({e})"
+
+
+class ServerCheckThread(QThread):
+    """모니터링 PC(관제 서버) 연결 상태를 비동기로 확인하는 Thread입니다."""
+
+    check_finished = pyqtSignal(bool, str)
+
+    def __init__(self, timeout: float = 1.5, parent=None):
+        super().__init__(parent)
+        self.timeout = timeout
+
+    def run(self) -> None:
+        ok, msg = check_monitoring_server_connection(self.timeout)
+        self.check_finished.emit(ok, msg)
+
+
 class AuthRequestThread(QThread):
     """로그인 인증 Network 요청을 UI와 분리하여 실행합니다."""
 
@@ -263,6 +295,8 @@ class MonitoringEventThread(QThread):
                 response = send_json_request(payload)
                 if not response.get("ok"):
                     self.status_changed.emit(response.get("message", "상태 전송 실패"), False)
+                else:
+                    self.status_changed.emit("상태 전송 완료", True)
             except (OSError, ValueError, ConnectionError) as error:
                 self.status_changed.emit(f"상태 전송 실패: {error}", False)
 

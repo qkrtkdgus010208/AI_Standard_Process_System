@@ -22,6 +22,15 @@ class TcpServerThread(QThread):
         self._running = False
         self._server_socket = None
 
+    def is_listening(self) -> bool:
+        """현재 TCP 서버 소켓이 정상 대기 중인지 반환합니다."""
+        return self._running and self.isRunning() and self._server_socket is not None
+
+    def restart(self) -> None:
+        """TCP 서버를 안전하게 중지한 후 재시작합니다."""
+        self.stop()
+        self.start()
+
     def run(self) -> None:
         """TCP Server를 열고 Monitoring PC 연결을 기다립니다."""
         if not config.TCP_ENABLED:
@@ -76,4 +85,5 @@ class TcpServerThread(QThread):
                 self._server_socket.close()
             except OSError:
                 pass
-        self.wait(2500)
+        if self.isRunning():
+            self.wait(2500)

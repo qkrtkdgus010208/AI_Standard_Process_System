@@ -24,11 +24,30 @@ class UartReceiverThread(QThread):
         self.baudrate = baudrate or config.UART_BAUDRATE
         self._running = False
         self._serial = None
+        self._is_connected = False
+
+    def is_connected(self) -> bool:
+        """현재 UART 포트가 정상 연결되어 수신 중인지 반환합니다."""
+        if config.TEST_MODE or not config.UART_ENABLED:
+            return self._running and self.isRunning()
+        return (
+            self._is_connected
+            and self.isRunning()
+            and self._serial is not None
+            and getattr(self._serial, "is_open", False)
+        )
+
+    def restart(self) -> None:
+        """UART 스레드를 안전하게 중지한 후 재시작합니다."""
+        self.stop()
+        self.start()
 
     def run(self) -> None:
         """UART 연결 후 수신 Loop를 실행합니다."""
         self._running = True
+        self._is_connected = False
         if config.TEST_MODE or not config.UART_ENABLED:
+            self._is_connected = True
             self.status_changed.emit("UART 테스트 모드", True)
             while self._running:
                 self.msleep(250)
@@ -42,6 +61,7 @@ class UartReceiverThread(QThread):
                 baudrate=self.baudrate,
                 timeout=config.UART_TIMEOUT_SECONDS,
             )
+            self._is_connected = True
             self.status_changed.emit(f"UART 연결: {self.port}", True)
             while self._running:
                 raw_line = self._serial.readline()
@@ -50,10 +70,16 @@ class UartReceiverThread(QThread):
                         raw_line.decode("utf-8", errors="replace").strip()
                     )
         except (OSError, Exception) as error:
+            self._is_connected = False
             self.status_changed.emit(f"UART 연결 실패: {error}", False)
         finally:
-            if self._serial is not None and self._serial.is_open:
-                self._serial.close()
+            self._is_connected = False
+            if self._serial is not None:
+                try:
+                    if self._serial.is_open:
+                        self._serial.close()
+                except OSError:
+                    pass
             self._serial = None
 
     def send_message(self, message: str) -> bool:
@@ -68,7 +94,7 @@ class UartReceiverThread(QThread):
 
     def simulate_receive(self, message: str) -> None:
         """TEST_MODE에서 UART 수신 동작을 시험합니다."""
-        if config.TEST_MODE:
+        if config.TEST_MODE or not config.UART_ENABLED:
             self.message_received.emit(message)
 
     def stop(self) -> None:
@@ -79,4 +105,5 @@ class UartReceiverThread(QThread):
                 self._serial.close()
             except OSError:
                 pass
-        self.wait(2000)
+        if self.isRunning():
+            self.wait(2000)

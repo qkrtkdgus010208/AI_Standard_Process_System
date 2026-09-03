@@ -12,7 +12,10 @@ from PyQt5.QtWidgets import (
 )
 
 import config
-from auth_manager import ProductFetchThread, ProductInfo, WorkerSession
+from auth_manager import (
+    ProductFetchThread, ProductInfo, ServerCheckThread, WorkerSession,
+    check_monitoring_server_connection,
+)
 from ai_judge import AiInferenceThread, JudgeResult
 from camera_manager import CameraThread
 from protocol import decode_message_text, parse_message
@@ -43,6 +46,11 @@ class WorkerWindow(QMainWindow):
         self.products = []
         self._current_product = None
         self.product_fetch_thread = None
+        self.server_check_thread = None
+        self._is_server_connected = True if config.TEST_MODE else False
+        self._alert_showing = False
+        self.server_monitor_timer = QTimer(self)
+        self.server_monitor_timer.timeout.connect(self._auto_check_server)
         self.message_popup = None
 
         self.work_controller = WorkStateController()
@@ -171,7 +179,7 @@ class WorkerWindow(QMainWindow):
         setup_grid.addWidget(self._field("전체 STEP", self.total_steps_display), 0, 4)
 
         self.refresh_button = QPushButton("제품 새로고침")
-        self.refresh_button.clicked.connect(self.fetch_products)
+        self.refresh_button.clicked.connect(lambda: self.fetch_products(show_alert=True))
         setup_grid.addWidget(self.refresh_button, 0, 5, alignment=Qt.AlignBottom)
         setup_grid.setColumnStretch(2, 2)
         setup_grid.setColumnStretch(3, 1)
@@ -225,10 +233,10 @@ class WorkerWindow(QMainWindow):
         self.resume_button = QPushButton("작업 재개")
         self.defect_button = QPushButton("불량 등록")
         self.defect_button.setObjectName("dangerButton")
-        self.start_button.clicked.connect(self.work_controller.start)
-        self.pause_button.clicked.connect(self.work_controller.pause)
-        self.resume_button.clicked.connect(self.work_controller.resume)
-        self.defect_button.clicked.connect(self.work_controller.register_defect)
+        self.start_button.clicked.connect(self.on_start_clicked)
+        self.pause_button.clicked.connect(self.on_pause_clicked)
+        self.resume_button.clicked.connect(self.on_resume_clicked)
+        self.defect_button.clicked.connect(self.on_defect_clicked)
         control_grid.addWidget(self.start_button, 0, 0)
         control_grid.addWidget(self.pause_button, 0, 1)
         control_grid.addWidget(self.resume_button, 1, 0)
@@ -264,6 +272,11 @@ class WorkerWindow(QMainWindow):
         tcp_item, self.tcp_status = self._make_status_item("TCP Server")
         for status_item in (camera_item, ai_item, uart_item, tcp_item):
             status_layout.addWidget(status_item, 1)
+
+        self.device_refresh_button = QPushButton("장치 새로고침")
+        self.device_refresh_button.setCursor(Qt.PointingHandCursor)
+        self.device_refresh_button.setToolTip("장치 연결 상태를 확인하고 끊어진 장치의 재연결을 시도합니다.")
+        status_layout.addWidget(self.device_refresh_button)
 
         main_row = QHBoxLayout()
         main_row.setSpacing(14)
@@ -334,16 +347,17 @@ class WorkerWindow(QMainWindow):
             lambda text, ok: self.update_device_status(self.uart_status, text, ok)
         )
         self.tcp_thread.message_received.connect(self.handle_tcp_message)
-        self.tcp_thread.status_changed.connect(
-            lambda text, ok: self.update_device_status(self.tcp_status, text, ok)
-        )
+        self.tcp_thread.status_changed.connect(self._on_tcp_thread_status_changed)
+        self.device_refresh_button.clicked.connect(self.refresh_device_connections)
 
     def _load_test_defaults(self) -> None:
         """초기 실행 시 모니터링 PC products 테이블에서 제품 목록을 로드합니다."""
-        self.fetch_products()
+        self.fetch_products(show_alert=False)
 
-    def fetch_products(self) -> None:
+    def fetch_products(self, show_alert: bool = True) -> None:
         """모니터링 PC의 products 테이블로부터 제품 목록을 비동기 조회합니다."""
+        if not self.check_server_available(show_alert=show_alert):
+            return
         if self.product_fetch_thread is not None and self.product_fetch_thread.isRunning():
             return
         self.product_fetch_thread = ProductFetchThread(
@@ -369,6 +383,11 @@ class WorkerWindow(QMainWindow):
             self.product_id_display.clear()
             self.total_steps_display.clear()
         self.add_log("info" if success else "warning", message)
+        if not success and ("연결" in message or "네트워크" in message or "Connection" in message):
+            self._is_server_connected = False
+            self.update_device_status(self.tcp_status, "서버 연결 끊김", False)
+        elif success:
+            self._is_server_connected = True
 
     def _on_product_changed(self, index: int) -> None:
         """드롭다운에서 제품 선택 시 제품번호와 전체 STEP을 고정 표시하고 작업 정보를 갱신합니다."""
@@ -394,6 +413,7 @@ class WorkerWindow(QMainWindow):
         ):
             thread.start()
         self.add_log("info", "작업자 프로그램 서비스를 시작했습니다.")
+        self.server_monitor_timer.start(2000)
 
     def apply_work_setup(self, silent: bool = False) -> None:
         """선택된 제품 정보를 Controller에 적용합니다."""
@@ -480,8 +500,34 @@ class WorkerWindow(QMainWindow):
             )
             self.camera_view.setPixmap(pixmap)
 
+    def on_start_clicked(self) -> None:
+        """작업 시작 전 서버 연결을 확인하고 시작합니다."""
+        if not self.check_server_available():
+            return
+        self.work_controller.start()
+
+    def on_pause_clicked(self) -> None:
+        """일시정지 전 서버 연결을 확인하고 일시정지합니다."""
+        if not self.check_server_available():
+            return
+        self.work_controller.pause()
+
+    def on_resume_clicked(self) -> None:
+        """작업 재개 전 서버 연결을 확인하고 재개합니다."""
+        if not self.check_server_available():
+            return
+        self.work_controller.resume()
+
+    def on_defect_clicked(self) -> None:
+        """불량 등록 전 서버 연결을 확인하고 등록합니다."""
+        if not self.check_server_available():
+            return
+        self.work_controller.register_defect()
+
     def request_ai_judgement(self) -> None:
         """최신 Frame을 AI Thread에 전달하고 UI는 즉시 반환합니다."""
+        if not self.check_server_available():
+            return
         if self._latest_frame is None:
             self.add_log("warning", "판정할 Camera Frame이 없습니다.")
             return
@@ -505,6 +551,10 @@ class WorkerWindow(QMainWindow):
         """STM32 UART 명령을 파싱하여 작업 상태에 반영합니다."""
         message = parse_message(raw_message)
         self.add_log("info", f"UART 수신: {message.raw}")
+        if message.command in ("PASS", "FAIL", "PAUSE", "RESUME", "RESET", "START"):
+            if not self.check_server_available():
+                self.add_log("warning", f"서버 연결 끊김으로 UART 명령({message.command})을 취소했습니다.")
+                return
         if message.command in ("PASS", "FAIL"):
             self.work_controller.apply_judgement(message.command, "UART 판정: " + message.command)
         elif message.command == "PAUSE":
@@ -571,6 +621,190 @@ class WorkerWindow(QMainWindow):
         label.setText(f"●  {text}")
         label.setStyleSheet(f"color:{color};")
         self.add_log("success" if connected else "error", text)
+        if label == self.camera_status and not connected:
+            self._latest_frame = None
+            self.camera_view.clear()
+            self.camera_view.setText(f"카메라 연결 끊김 ({text})\n장치 확인 후 '장치 새로고침'을 누르세요.")
+
+    def refresh_device_connections(self) -> None:
+        """사용자가 '장치 새로고침' 버튼을 눌렀을 때만 장치 상태를 다시 확인하고 재연결을 시도합니다."""
+        self.device_refresh_button.setEnabled(False)
+        self.add_log("info", "장치 연결 상태 확인 및 재연결을 시도합니다.")
+
+        # 1. Camera 확인 및 재연결
+        if not self.camera_thread.is_connected():
+            self.camera_status.setText("●  재연결 중...")
+            self.camera_status.setStyleSheet("color:#7B8794;")
+            self.camera_thread.restart()
+        else:
+            backend_name = (
+                "테스트" if self.camera_thread.backend == "mock"
+                else self.camera_thread.backend.upper()
+            )
+            self.update_device_status(self.camera_status, f"{backend_name} 카메라 연결", True)
+
+        # 2. UART 확인 및 재연결
+        if not self.uart_thread.is_connected():
+            self.uart_status.setText("●  재연결 중...")
+            self.uart_status.setStyleSheet("color:#7B8794;")
+            self.uart_thread.restart()
+        else:
+            mode_text = (
+                "UART 테스트 모드" if config.TEST_MODE or not config.UART_ENABLED
+                else f"UART 연결: {self.uart_thread.port}"
+            )
+            self.update_device_status(self.uart_status, mode_text, True)
+
+        # 3. AI 추론 확인 및 재시작
+        if not self.ai_thread.is_ready():
+            self.ai_status.setText("●  재시작 중...")
+            self.ai_status.setStyleSheet("color:#7B8794;")
+            self.ai_thread.restart()
+        else:
+            self.update_device_status(self.ai_status, "AI 판정 준비", True)
+
+        # 4. TCP Server 및 관제 PC 연결 확인
+        self._check_tcp_and_server()
+
+        QTimer.singleShot(1000, lambda: self.device_refresh_button.setEnabled(True))
+
+    def _on_tcp_thread_status_changed(self, text: str, ok: bool) -> None:
+        """로컬 TCP 수신 스레드 상태 변경 시 처리합니다."""
+        if not ok:
+            self.update_device_status(self.tcp_status, text, False)
+        else:
+            self._check_tcp_and_server()
+
+    def _check_tcp_and_server(self) -> None:
+        """로컬 TCP 수신 서버와 원격 관제 PC 서버 연결 상태를 점검합니다."""
+        if not self.tcp_thread.is_listening():
+            self.tcp_status.setText("●  TCP 재시작 중...")
+            self.tcp_status.setStyleSheet("color:#7B8794;")
+            self.tcp_thread.restart()
+
+        self.tcp_status.setText("●  서버 확인 중...")
+        self.tcp_status.setStyleSheet("color:#7B8794;")
+
+        if self.server_check_thread is not None and self.server_check_thread.isRunning():
+            return
+
+        self.server_check_thread = ServerCheckThread(timeout=1.5, parent=self)
+        self.server_check_thread.check_finished.connect(self._on_server_check_finished)
+        self.server_check_thread.start()
+
+    def _on_server_check_finished(self, ok: bool, message: str) -> None:
+        """관제 서버 연결 확인 결과를 UI 상태에 반영합니다."""
+        self._is_server_connected = ok
+        if not self.tcp_thread.is_listening():
+            self.update_device_status(self.tcp_status, "TCP 서버 오류", False)
+            self.add_log("error", "로컬 TCP 수신 서버가 대기 중이 아닙니다.")
+            return
+
+        if ok:
+            mode_text = (
+                "서버 테스트 모드" if config.TEST_MODE
+                else "관제 서버 연결"
+            )
+            self.update_device_status(self.tcp_status, mode_text, True)
+            self.tcp_status.setToolTip(f"{message} (로컬 대기: {self.tcp_thread.port})")
+        else:
+            self.update_device_status(self.tcp_status, "서버 연결 끊김", False)
+            self.tcp_status.setToolTip(f"{message} (로컬 대기: {self.tcp_thread.port})")
+            self.add_log("error", message)
+
+    def handle_monitoring_event_status(self, message: str, ok: bool) -> None:
+        """작업상태 전송 중 발생한 관제 서버 통신 결과를 UI 상태에 반영합니다."""
+        if not ok:
+            if self._is_server_connected or "연결 끊김" not in self.tcp_status.text():
+                self._is_server_connected = False
+                self.update_device_status(self.tcp_status, "서버 연결 끊김", False)
+                self.add_log("error", message)
+        else:
+            if not self._is_server_connected or "관제 서버 연결" not in self.tcp_status.text():
+                self._is_server_connected = True
+                mode_text = "서버 테스트 모드" if config.TEST_MODE else "관제 서버 연결"
+                self.update_device_status(self.tcp_status, mode_text, True)
+                self.tcp_status.setToolTip(f"관제 서버 통신 정상 (로컬 대기: {self.tcp_thread.port})")
+
+    def _auto_check_server(self) -> None:
+        """주기적으로 백그라운드에서 관제 서버 연결 상태를 점검하여 UI에 자동 반영합니다."""
+        if config.TEST_MODE:
+            return
+        if self.server_check_thread is not None and self.server_check_thread.isRunning():
+            return
+
+        self.server_check_thread = ServerCheckThread(timeout=0.8, parent=self)
+        self.server_check_thread.check_finished.connect(self._on_auto_server_check_finished)
+        self.server_check_thread.start()
+
+    def _on_auto_server_check_finished(self, ok: bool, message: str) -> None:
+        """주기적 서버 점검 결과를 처리하며, 연결 상태가 변경된 경우에만 UI를 갱신합니다."""
+        if not self.tcp_thread.is_listening():
+            if "TCP 서버 오류" not in self.tcp_status.text():
+                self.update_device_status(self.tcp_status, "TCP 서버 오류", False)
+                self.add_log("error", "로컬 TCP 수신 서버가 대기 중이 아닙니다.")
+            return
+
+        if ok:
+            # 끊김 상태에서 다시 연결된 경우 자동 반영
+            if not self._is_server_connected or "서버 연결 끊김" in self.tcp_status.text():
+                self._is_server_connected = True
+                mode_text = "서버 테스트 모드" if config.TEST_MODE else "관제 서버 연결"
+                self.update_device_status(self.tcp_status, mode_text, True)
+                self.tcp_status.setToolTip(f"{message} (로컬 대기: {self.tcp_thread.port})")
+        else:
+            # 연결 상태에서 끊어진 경우 자동 반영
+            if self._is_server_connected or "관제 서버 연결" in self.tcp_status.text():
+                self._is_server_connected = False
+                self.update_device_status(self.tcp_status, "서버 연결 끊김", False)
+                self.tcp_status.setToolTip(f"{message} (로컬 대기: {self.tcp_thread.port})")
+
+    def check_server_available(self, show_alert: bool = True) -> bool:
+        """서버 연결 상태를 점검하고, 끊겨 있으면 경고창을 띄우고 False를 반환합니다."""
+        if config.TEST_MODE:
+            return True
+
+        ok, msg = check_monitoring_server_connection(timeout=0.3)
+        if not ok:
+            if self._is_server_connected or self.tcp_status.text() != "●  서버 연결 끊김":
+                self._is_server_connected = False
+                self.update_device_status(self.tcp_status, "서버 연결 끊김", False)
+                self.tcp_status.setToolTip(f"{msg} (로컬 대기: {self.tcp_thread.port})")
+            if show_alert:
+                self._show_server_disconnected_alert(msg)
+            return False
+
+        if not self._is_server_connected or "관제 서버 연결" not in self.tcp_status.text():
+            self._is_server_connected = True
+            mode_text = "서버 테스트 모드" if config.TEST_MODE else "관제 서버 연결"
+            self.update_device_status(self.tcp_status, mode_text, True)
+            self.tcp_status.setToolTip(f"{msg} (로컬 대기: {self.tcp_thread.port})")
+
+        return True
+
+    def _show_server_disconnected_alert(self, detail: str = "") -> None:
+        """서버 연결 끊김 경고 대화상자를 띄웁니다."""
+        if self._alert_showing:
+            return
+        self._alert_showing = True
+        try:
+            self.add_log("error", "서버 연결이 끊겨 있어 요청한 동작을 실행하지 않았습니다.")
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("서버 연결 끊김 경고")
+            msg_box.setText("관제 서버와의 연결이 끊겨 있습니다.")
+            info_text = (
+                "관제 PC(모니터링 서버)와의 연결이 끊겨 있어 해당 작업을 실행할 수 없습니다.\n\n"
+                "서버 구동 상태를 확인하거나 '장치 새로고침'을 진행한 후 다시 시도하세요."
+            )
+            if detail:
+                info_text += f"\n\n[상세 정보] {detail}"
+            msg_box.setInformativeText(info_text)
+            msg_box.setStandardButtons(QMessageBox.Ok)
+            msg_box.button(QMessageBox.Ok).setText("확인")
+            msg_box.exec_()
+        finally:
+            self._alert_showing = False
 
     def add_log(self, level: str, message: str) -> None:
         """시간과 Level이 포함된 시스템 기록을 추가합니다."""
@@ -589,6 +823,11 @@ class WorkerWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         """창 종료 시 모든 Device Thread를 안전하게 정리합니다."""
         self.clock_timer.stop()
+        self.server_monitor_timer.stop()
+        if self.server_check_thread is not None and self.server_check_thread.isRunning():
+            self.server_check_thread.wait(1000)
+        if self.product_fetch_thread is not None and self.product_fetch_thread.isRunning():
+            self.product_fetch_thread.wait(1000)
         for thread in (
             self.camera_thread, self.ai_thread, self.uart_thread, self.tcp_thread
         ):

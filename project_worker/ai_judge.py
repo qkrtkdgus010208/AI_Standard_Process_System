@@ -63,6 +63,15 @@ class AiInferenceThread(QThread):
         self._latest_frame = None
         self._running = False
 
+    def is_ready(self) -> bool:
+        """AI 추론 스레드가 정상 동작 대기 중인지 반환합니다."""
+        return self._running and self.isRunning()
+
+    def restart(self) -> None:
+        """AI 추론 스레드를 안전하게 중지한 후 재시작합니다."""
+        self.stop()
+        self.start()
+
     def submit_frame(self, frame) -> None:
         """대기열을 늘리지 않고 가장 최신 Frame 하나만 보관합니다."""
         with self._condition:
@@ -91,4 +100,5 @@ class AiInferenceThread(QThread):
         self._running = False
         with self._condition:
             self._condition.notify_all()
-        self.wait(3000)
+        if self.isRunning():
+            self.wait(3000)

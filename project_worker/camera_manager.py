@@ -26,11 +26,35 @@ class CameraThread(QThread):
         self._running = False
         self._capture = None
         self._mock_frame_no = 0
+        self._is_connected = False
+        self._last_frame_time = 0.0
+
+    def is_connected(self) -> bool:
+        """카메라가 정상 연결되어 프레임을 수신 중인지 반환합니다."""
+        return self._is_connected and self.isRunning() and not self.is_stalled()
+
+    def is_stalled(self) -> bool:
+        """카메라 연결 상태이나 일정 시간 프레임이 중단되었는지 확인합니다."""
+        if self.backend == "mock":
+            return False
+        if not self._is_connected or not self.isRunning():
+            return True
+        if self._last_frame_time == 0.0:
+            return False
+        return (time.time() - self._last_frame_time) > 3.0
+
+    def restart(self) -> None:
+        """카메라 스레드를 안전하게 중지한 후 재시작합니다."""
+        self.stop()
+        self.start()
 
     def run(self) -> None:
         """Camera Frame 읽기 Loop를 실행합니다."""
         self._running = True
+        self._is_connected = False
+        self._last_frame_time = 0.0
         if self.backend == "mock":
+            self._is_connected = True
             self.status_changed.emit("테스트 카메라", True)
             self._run_mock_camera()
             return
@@ -42,20 +66,27 @@ class CameraThread(QThread):
             if self._capture is None or not self._capture.isOpened():
                 self.status_changed.emit("카메라를 열 수 없습니다.", False)
                 return
+            self._is_connected = True
             self.status_changed.emit(f"{self.backend.upper()} 카메라 연결", True)
             while self._running:
                 success, frame = self._capture.read()
                 if not success:
-                    self.status_changed.emit("카메라 Frame 읽기 실패", False)
-                    self.msleep(200)
-                    continue
+                    self._is_connected = False
+                    self.status_changed.emit("카메라 연결 끊김", False)
+                    break
+                self._last_frame_time = time.time()
                 self.frame_ready.emit(frame)
                 self.msleep(max(1, int(1000 / max(1, config.CAMERA_FPS))))
         except Exception as error:
+            self._is_connected = False
             self.status_changed.emit(f"카메라 오류: {error}", False)
         finally:
+            self._is_connected = False
             if self._capture is not None:
-                self._capture.release()
+                try:
+                    self._capture.release()
+                except Exception:
+                    pass
             self._capture = None
 
     def _open_capture(self):
@@ -100,4 +131,5 @@ class CameraThread(QThread):
     def stop(self) -> None:
         """Frame Loop를 안전하게 종료합니다."""
         self._running = False
-        self.wait(2000)
+        if self.isRunning():
+            self.wait(2000)
