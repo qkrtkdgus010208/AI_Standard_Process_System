@@ -135,14 +135,17 @@ class WorkStateController(QObject):
 
     def register_defect(self) -> None:
         """현재 진행 중인 작업의 수동 불량을 등록(defect 상태 서버 전송)하고 처음(0단계 대기)으로 초기화합니다."""
-        if self.snapshot.state in ("running", "paused") and self.snapshot.current_step > 0:
-            # 1. 현재 공정 단계의 수동 불량(defect) 상태를 모니터링 PC로 전송
-            self.snapshot.last_result = "defect"
-            self.snapshot.event = "manual_defect"
-            self.snapshot.defect_type = "manual"
-            self.snapshot.detail = f"STEP {self.snapshot.current_step} 작업자 수동 불량 등록"
-            self.log_created.emit("error", f"STEP {self.snapshot.current_step} 수동 불량 등록 (서버 전송)")
-            self._publish()
+        if self.snapshot.state != "running" or self.snapshot.current_step <= 0:
+            self.log_created.emit("warning", "작업이 진행 중일 때만 불량을 등록할 수 있습니다.")
+            return
+
+        # 1. 현재 공정 단계의 수동 불량(defect) 상태를 모니터링 PC로 전송
+        self.snapshot.last_result = "defect"
+        self.snapshot.event = "manual_defect"
+        self.snapshot.defect_type = "manual"
+        self.snapshot.detail = f"STEP {self.snapshot.current_step} 작업자 수동 불량 등록"
+        self.log_created.emit("error", f"STEP {self.snapshot.current_step} 수동 불량 등록 (서버 전송)")
+        self._publish()
 
         # 2. 작업을 처음(0단계 대기)으로 초기화 후 초기화 상태를 모니터링 PC로 전송
         self.snapshot.current_step = 0

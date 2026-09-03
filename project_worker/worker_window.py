@@ -233,6 +233,7 @@ class WorkerWindow(QMainWindow):
         self.resume_button = QPushButton("작업 재개")
         self.defect_button = QPushButton("불량 등록")
         self.defect_button.setObjectName("dangerButton")
+        self.defect_button.setEnabled(False)
         self.start_button.clicked.connect(self.work_controller.start)
         self.pause_button.clicked.connect(self.work_controller.pause)
         self.resume_button.clicked.connect(self.work_controller.resume)
@@ -539,6 +540,7 @@ class WorkerWindow(QMainWindow):
         self.start_button.setEnabled(is_idle and self._current_product is not None)
         self.pause_button.setEnabled(state_name == "running")
         self.resume_button.setEnabled(state_name == "paused")
+        self.defect_button.setEnabled(state_name == "running")
         self.ai_button.setEnabled(state_name == "running" and not self._ai_busy)
 
     def _update_result_display(self, result: str,
