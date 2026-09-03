@@ -5,7 +5,7 @@ import queue
 import socket
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -21,6 +21,7 @@ class WorkerSession:
     role: str
     token: str
     is_test_session: bool = False
+    saved_state: Optional[dict] = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,79 @@ class ServerCheckThread(QThread):
         self.check_finished.emit(ok, msg)
 
 
+def parse_work_state_data(raw: Any) -> Optional[dict]:
+    """서버 응답에서 이전 작업 상태 데이터를 정규화하여 추출합니다."""
+    if not isinstance(raw, dict):
+        return None
+
+    if "work_state" in raw and isinstance(raw["work_state"], dict):
+        raw = raw["work_state"]
+    elif "state_data" in raw and isinstance(raw["state_data"], dict):
+        raw = raw["state_data"]
+
+    product_id = str(
+        raw.get("product_id")
+        or raw.get("productId")
+        or raw.get("code")
+        or raw.get("product_code")
+        or ""
+    ).strip()
+
+    if not product_id:
+        return None
+
+    product_name = str(
+        raw.get("product_name")
+        or raw.get("productName")
+        or raw.get("name")
+        or raw.get("item_name")
+        or product_id
+    ).strip()
+
+    total_steps = 1
+    for k in ("total_steps", "totalSteps", "steps", "step_count", "process_count"):
+        if k in raw:
+            try:
+                total_steps = int(raw[k])
+                break
+            except (ValueError, TypeError):
+                pass
+    total_steps = max(1, total_steps)
+
+    current_step = 0
+    for k in ("current_step", "currentStep", "step", "step_no"):
+        if k in raw:
+            try:
+                current_step = int(raw[k])
+                break
+            except (ValueError, TypeError):
+                pass
+
+    state = str(raw.get("state") or raw.get("status") or "running").strip().lower()
+    last_result = str(raw.get("last_result") or raw.get("lastResult") or "waiting").strip().lower()
+    defect_type = str(raw.get("defect_type") or raw.get("defectType") or "").strip()
+    detail = str(raw.get("detail") or "").strip()
+
+    # 완료된 작업이거나 0단계 대기 상태인 경우 복원 대상 아님
+    if state == "complete" or (current_step == 0 and state == "idle"):
+        return None
+
+    current_step = max(1, min(total_steps, current_step))
+    if state not in ("running", "paused"):
+        state = "running"
+
+    return {
+        "product_id": product_id,
+        "product_name": product_name,
+        "total_steps": total_steps,
+        "current_step": current_step,
+        "state": state,
+        "last_result": last_result,
+        "defect_type": defect_type,
+        "detail": detail,
+    }
+
+
 class AuthRequestThread(QThread):
     """로그인 인증 Network 요청을 UI와 분리하여 실행합니다."""
 
@@ -122,11 +196,22 @@ class AuthRequestThread(QThread):
                 self.completed.emit(AuthResult(False, response.get("message", "로그인 실패")))
                 return
             employee = response["employee"]
+            token = str(response["token"])
+
+            # 방법 1: 서버 로그인(auth) 응답의 work_state에서 이전 작업 기록 추출
+            saved_raw = (
+                response.get("work_state")
+                or response.get("state")
+                or employee.get("work_state")
+            )
+            saved_state = parse_work_state_data(saved_raw)
+
             session = WorkerSession(
                 employee_id=str(employee["employee_id"]),
                 name=str(employee["name"]),
                 role=str(employee["role"]),
-                token=str(response["token"]),
+                token=token,
+                saved_state=saved_state,
             )
             self.completed.emit(AuthResult(True, "로그인 성공", session))
         except (OSError, ValueError, KeyError, ConnectionError) as error:

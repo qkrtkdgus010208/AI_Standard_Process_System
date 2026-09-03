@@ -54,6 +54,38 @@ class WorkStateController(QObject):
         self.log_created.emit("info", "작업 정보가 설정되었습니다 (0단계 대기).")
         self._publish()
 
+    def restore_state(self, employee_id: str, employee_name: str, saved_state: dict) -> None:
+        """서버에 남아있는 이전 작업 내용을 복구합니다."""
+        product_id = str(saved_state.get("product_id") or "").strip()
+        product_name = str(saved_state.get("product_name") or "").strip()
+        total_steps = max(1, int(saved_state.get("total_steps") or 1))
+        current_step = max(1, min(total_steps, int(saved_state.get("current_step") or 1)))
+        state = str(saved_state.get("state") or "running").strip()
+        if state not in ("running", "paused"):
+            state = "running"
+        last_result = str(saved_state.get("last_result") or "waiting").strip()
+        defect_type = str(saved_state.get("defect_type") or "").strip()
+        detail = str(saved_state.get("detail") or f"STEP {current_step} 이전 작업 복원").strip()
+
+        self.snapshot = WorkSnapshot(
+            employee_id=employee_id.strip(),
+            employee_name=employee_name.strip(),
+            product_id=product_id,
+            product_name=product_name,
+            total_steps=total_steps,
+            current_step=current_step,
+            state=state,
+            last_result=last_result,
+            event="restore",
+            defect_type=defect_type,
+            detail=detail,
+        )
+        self.log_created.emit(
+            "success",
+            f"서버 이전 작업 복원: {product_name} (STEP {current_step}/{total_steps})",
+        )
+        self._publish()
+
     def start(self) -> None:
         """설정된 작업을 시작(STEP 1)하거나 Pause 상태에서 재개합니다."""
         if not self.snapshot.employee_id or not self.snapshot.product_id:
