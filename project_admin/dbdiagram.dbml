@@ -1,0 +1,137 @@
+Project MonitoringPC {
+  database_type: 'SQLite'
+  Note: 'Monitoring PC 공정 모니터링 데이터베이스. 시각은 KST 문자열로 저장됩니다.'
+}
+
+Table employees {
+  employee_id text [pk]
+  name text [not null]
+  password_hash text [not null, note: 'PBKDF2-SHA256 비밀번호 해시']
+  role text [note: 'admin, worker 또는 revoked']
+}
+
+Table products {
+  product_id text [pk]
+  product_name text [not null]
+  total_steps integer [not null]
+}
+
+Table work_sessions {
+  session_id integer [pk, increment]
+  employee_id text
+  login_at datetime
+  logout_at datetime
+
+  indexes {
+    (employee_id, logout_at) [name: 'idx_work_sessions_employee_open']
+  }
+}
+
+Table product_runs {
+  product_run_id integer [pk, increment]
+  employee_id text
+  product_id text
+  started_at datetime
+  completed_at datetime
+  result text [not null, default: 'in_progress', note: 'in_progress, pass 또는 defect']
+
+  indexes {
+    (employee_id, completed_at, started_at, product_run_id) [name: 'idx_product_runs_employee_open']
+    (product_id, product_run_id) [name: 'idx_product_runs_product']
+  }
+}
+
+Table step_runs {
+  step_run_id integer [pk, increment]
+  product_run_id integer
+  step_no integer
+  started_at datetime
+  completed_at datetime
+
+  indexes {
+    (product_run_id, completed_at, started_at, step_run_id) [name: 'idx_step_runs_product_run_open']
+  }
+}
+
+Table pause_logs {
+  pause_id integer [pk, increment]
+  step_run_id integer
+  paused_at datetime
+  resumed_at datetime
+
+  indexes {
+    step_run_id [name: 'idx_pause_logs_step_run']
+  }
+}
+
+Table defect_logs {
+  defect_id integer [pk, increment]
+  step_run_id integer [not null, unique]
+  defect_type text [not null, default: 'manual']
+  detail text [not null, default: '']
+  defect_at datetime [not null, default: `datetime('now', '+9 hours')`]
+
+}
+
+Table judgement_logs {
+  judgement_id integer [pk, increment]
+  step_run_id integer [not null]
+  result text [not null, note: 'pass 또는 fail']
+  source text [not null, default: 'inspection']
+  detail text [not null, default: '']
+  judged_at datetime [not null, default: `datetime('now', '+9 hours')`]
+
+  indexes {
+    (step_run_id, judged_at) [name: 'idx_judgement_logs_step_time']
+  }
+}
+
+Table product_quality_baselines {
+  product_id text [pk]
+  reset_at datetime [not null]
+  product_run_id_cutoff integer [not null, default: 0, note: '이 ID 이후 제품 작업만 품질 통계에 포함']
+  judgement_id_cutoff integer [not null, default: 0, note: '이 ID 이후 판정만 품질 통계에 포함']
+  defect_id_cutoff integer [not null, default: 0, note: '이 ID 이후 불량만 품질 통계에 포함']
+}
+
+Table worker_state_events {
+  state_event_id integer [pk, increment]
+  employee_id text [not null]
+  product_id text [not null]
+  product_name text [not null]
+  state text [not null, note: 'idle, running, paused 또는 complete']
+  current_step integer [not null]
+  total_steps integer [not null]
+  last_result text [not null, note: 'waiting, pass, fail 또는 defect']
+  event text [not null, default: '']
+  defect_type text [not null, default: '']
+  detail text [not null, default: '']
+  received_at datetime [not null, default: `datetime('now', '+9 hours')`]
+
+  indexes {
+    (employee_id, received_at) [name: 'idx_worker_state_events_employee_time']
+    (product_id, received_at) [name: 'idx_worker_state_events_product_time']
+  }
+}
+
+Table app_metadata {
+  key text [pk]
+  value text [not null]
+}
+
+Ref: work_sessions.employee_id > employees.employee_id
+
+Ref: product_runs.employee_id > employees.employee_id
+Ref: product_runs.product_id > products.product_id
+
+Ref: step_runs.product_run_id > product_runs.product_run_id
+Ref: pause_logs.step_run_id > step_runs.step_run_id
+
+Ref: defect_logs.step_run_id > step_runs.step_run_id
+
+Ref: judgement_logs.step_run_id > step_runs.step_run_id
+
+Ref: products.product_id - product_quality_baselines.product_id
+
+Ref: worker_state_events.employee_id > employees.employee_id
+Ref: worker_state_events.product_id > products.product_id
