@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
 
 import config
 from auth_manager import (
-    ProductFetchThread, ProductInfo, ServerCheckThread, WorkerSession,
+    MonitoringEventThread, ProductFetchThread, ProductInfo, ServerCheckThread, WorkerSession,
 )
 from ai_judge import AiInferenceThread, JudgeResult
 from camera_manager import CameraThread
@@ -79,6 +79,9 @@ class WorkerWindow(QMainWindow):
         self.ai_thread = AiInferenceThread()
         self.uart_thread = UartReceiverThread()
         self.tcp_thread = TcpServerThread()
+        self.monitoring_event_thread = MonitoringEventThread(session=session, parent=self)
+        self.monitoring_event_thread.status_changed.connect(self.handle_monitoring_event_status)
+        self.monitoring_event_thread.start()
 
         self.server_monitor_timer = QTimer(self)
         self.server_monitor_timer.timeout.connect(self._auto_check_server)
@@ -368,6 +371,7 @@ class WorkerWindow(QMainWindow):
     def _connect_signals(self) -> None:
         """Thread와 상태 Controller 신호를 UI Slot에 연결합니다."""
         self.work_controller.state_changed.connect(self.update_work_state)
+        self.work_controller.state_changed.connect(self.monitoring_event_thread.enqueue_state)
         self.work_controller.log_created.connect(self.add_log)
 
         self.camera_thread.frame_ready.connect(self.update_camera_frame)
@@ -801,6 +805,7 @@ class WorkerWindow(QMainWindow):
             self.server_check_thread.wait(1000)
         if self.product_fetch_thread is not None and self.product_fetch_thread.isRunning():
             self.product_fetch_thread.wait(1000)
+        self.monitoring_event_thread.logout_and_stop()
         for thread in (self.camera_thread, self.ai_thread, self.uart_thread, self.tcp_thread):
             thread.stop()
         event.accept()
