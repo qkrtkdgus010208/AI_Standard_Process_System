@@ -4,7 +4,6 @@ import json
 import queue
 import socket
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Optional, Union
 
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -87,6 +86,7 @@ class ServerCheckThread(QThread):
     def __init__(self, timeout: float = 1.5, parent=None):
         super().__init__(parent)
         self.timeout = timeout
+        self.finished.connect(self.deleteLater)
 
     def run(self) -> None:
         ok, msg = check_monitoring_server_connection(self.timeout)
@@ -175,6 +175,7 @@ class AuthRequestThread(QThread):
         super().__init__(parent)
         self.employee_id = employee_id.strip()
         self.password = password
+        self.finished.connect(self.deleteLater)
 
     def run(self) -> None:
         """TEST_MODE Mock 인증 또는 실제 Monitoring PC 인증을 실행합니다."""
@@ -307,6 +308,7 @@ class ProductFetchThread(QThread):
     def __init__(self, token: str = "", parent=None):
         super().__init__(parent)
         self.token = token
+        self.finished.connect(self.deleteLater)
 
     def run(self) -> None:
         """모니터링 PC에 제품 목록을 요청하여 UI에 전달합니다."""

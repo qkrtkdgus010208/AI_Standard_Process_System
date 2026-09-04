@@ -68,7 +68,9 @@ class CameraThread(QThread):
                 return
             self._is_connected = True
             self.status_changed.emit(f"{self.backend.upper()} 카메라 연결", True)
+            target_interval = 1.0 / max(1, config.CAMERA_FPS)
             while self._running:
+                loop_start = time.time()
                 success, frame = self._capture.read()
                 if not success:
                     self._is_connected = False
@@ -76,7 +78,14 @@ class CameraThread(QThread):
                     break
                 self._last_frame_time = time.time()
                 self.frame_ready.emit(frame)
-                self.msleep(max(1, int(1000 / max(1, config.CAMERA_FPS))))
+                
+                # 목표 FPS 간격에 맞춰 필요한 시간만큼만 휴식 (하드웨어 블로킹 시간 고려)
+                elapsed = time.time() - loop_start
+                sleep_needed = target_interval - elapsed
+                if sleep_needed > 0.002:
+                    self.msleep(int(sleep_needed * 1000))
+                else:
+                    self.msleep(1)
         except Exception as error:
             self._is_connected = False
             self.status_changed.emit(f"카메라 오류: {error}", False)

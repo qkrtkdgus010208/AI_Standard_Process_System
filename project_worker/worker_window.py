@@ -8,13 +8,12 @@ from PyQt5.QtGui import QColor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
-    QProgressBar, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QVBoxLayout, QWidget,
 )
 
 import config
 from auth_manager import (
     ProductFetchThread, ProductInfo, ServerCheckThread, WorkerSession,
-    check_monitoring_server_connection,
 )
 from ai_judge import AiInferenceThread, JudgeResult
 from camera_manager import CameraThread
@@ -366,7 +365,12 @@ class WorkerWindow(QMainWindow):
             parent=self,
         )
         self.product_fetch_thread.products_fetched.connect(self._on_products_fetched)
+        self.product_fetch_thread.finished.connect(self._clear_product_fetch_thread)
         self.product_fetch_thread.start()
+
+    def _clear_product_fetch_thread(self) -> None:
+        """조회 완료된 스레드 참조를 해제합니다."""
+        self.product_fetch_thread = None
 
     def _on_products_fetched(self, products: list, success: bool, message: str) -> None:
         """가져온 제품 목록을 드롭다운에 채우고, 이전 작업이 남아있으면 복원합니다."""
@@ -561,22 +565,33 @@ class WorkerWindow(QMainWindow):
         )
 
     def update_camera_frame(self, frame) -> None:
-        """Camera Thread의 Frame을 화면에 표시하고 최신 Frame을 보관합니다."""
+        """Camera Thread의 Frame을 화면에 최적화하여 표시하고 최신 Frame을 보관합니다."""
         self._latest_frame = frame
-        image = None
+        if frame is None:
+            return
+
         if isinstance(frame, QImage):
-            image = frame
-        elif cv2 is not None and frame is not None:
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            height, width, channels = rgb_frame.shape
-            image = QImage(
-                rgb_frame.data, width, height, channels * width, QImage.Format_RGB888
-            ).copy()
-        if image is not None:
-            pixmap = QPixmap.fromImage(image).scaled(
-                self.camera_view.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            pixmap = QPixmap.fromImage(frame)
+            self.camera_view.setPixmap(
+                pixmap.scaled(self.camera_view.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
             )
-            self.camera_view.setPixmap(pixmap)
+        elif cv2 is not None:
+            view_size = self.camera_view.size()
+            vw, vh = view_size.width(), view_size.height()
+            if vw > 10 and vh > 10:
+                fh, fw = frame.shape[:2]
+                scale = min(vw / fw, vh / fh)
+                nw, nh = max(1, int(fw * scale)), max(1, int(fh * scale))
+                # OpenCV의 SIMD 가속 리사이즈가 CPU SmoothTransformation보다 훨씬 빠름
+                resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_LINEAR)
+                rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+                image = QImage(rgb_frame.data, nw, nh, nw * 3, QImage.Format_RGB888)
+                self.camera_view.setPixmap(QPixmap.fromImage(image))
+            else:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                fh, fw, _ = rgb_frame.shape
+                image = QImage(rgb_frame.data, fw, fh, fw * 3, QImage.Format_RGB888)
+                self.camera_view.setPixmap(QPixmap.fromImage(image))
 
     def request_ai_judgement(self) -> None:
         """최신 Frame을 AI Thread에 전달하고 UI는 즉시 반환합니다."""
@@ -739,7 +754,12 @@ class WorkerWindow(QMainWindow):
 
         self.server_check_thread = ServerCheckThread(timeout=1.0, parent=self)
         self.server_check_thread.check_finished.connect(self._on_auto_server_check_finished)
+        self.server_check_thread.finished.connect(self._clear_server_check_thread)
         self.server_check_thread.start()
+
+    def _clear_server_check_thread(self) -> None:
+        """점검 완료된 스레드 참조를 해제합니다."""
+        self.server_check_thread = None
 
     def _on_auto_server_check_finished(self, ok: bool, message: str) -> None:
         """서버 연결 끊김 감지 시 알림창을 띄우고 프로그램을 종료합니다."""

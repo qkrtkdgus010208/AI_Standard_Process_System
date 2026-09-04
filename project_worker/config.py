@@ -50,10 +50,3 @@ DEFAULT_PRODUCTS = [
     {"product_id": "P002", "product_name": "모터 드라이버 B", "total_steps": 4},
     {"product_id": "P003", "product_name": "센서 컨트롤러 C", "total_steps": 3},
 ]
-
-# TEST_MODE 초기 작업 정보
-DEFAULT_EMPLOYEE_ID = "1001"
-DEFAULT_EMPLOYEE_NAME = "홍길동"
-DEFAULT_PRODUCT_ID = "P001"
-DEFAULT_PRODUCT_NAME = "스마트 액추에이터 A"
-DEFAULT_TOTAL_STEPS = 5

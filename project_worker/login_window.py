@@ -121,7 +121,12 @@ class WorkerLoginWindow(QMainWindow):
         self.error_label.clear()
         self.auth_thread = AuthRequestThread(employee_id, password, self)
         self.auth_thread.completed.connect(self._handle_auth_result)
+        self.auth_thread.finished.connect(self._clear_auth_thread)
         self.auth_thread.start()
+
+    def _clear_auth_thread(self) -> None:
+        """인증 완료된 스레드 참조를 해제합니다."""
+        self.auth_thread = None
 
     def _handle_auth_result(self, result: AuthResult) -> None:
         """인증 결과에 따라 오류를 표시하거나 Session을 전달합니다."""

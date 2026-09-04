@@ -24,10 +24,6 @@ def parse_message(raw_message: str) -> ProtocolMessage:
     return ProtocolMessage(parts[0].upper(), tuple(parts[1:]), cleaned)
 
 
-def build_status_message(employee_id: str, status: str, step_no: int) -> str:
-    """향후 Monitoring PC로 보낼 작업상태 메시지를 생성합니다."""
-    return f"STATUS|{employee_id}|{status}|{step_no}"
-
 
 def decode_message_text(encoded_text: str) -> str:
     """Monitoring PC가 Base64로 보낸 UTF-8 직원 메시지를 복원합니다."""

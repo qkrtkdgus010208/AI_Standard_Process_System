@@ -92,12 +92,7 @@ class WorkStateController(QObject):
             self.log_created.emit("error", "직원번호와 제품번호를 확인하세요.")
             return
         if self.snapshot.state == "paused":
-            self.snapshot.state = "running"
-            self.snapshot.event = "resume"
-            self.snapshot.defect_type = ""
-            self.snapshot.detail = f"STEP {self.snapshot.current_step} 작업 재개"
-            self.log_created.emit("info", f"STEP {self.snapshot.current_step} 작업을 재개했습니다.")
-            self._publish()
+            self.resume()
             return
 
         self.snapshot.current_step = 1
