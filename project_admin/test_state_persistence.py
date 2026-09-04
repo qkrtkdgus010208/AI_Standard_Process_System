@@ -79,6 +79,15 @@ class WorkerStatePersistenceTest(unittest.TestCase):
 
         pauses = self.database.get_pause_logs(pause["step_run_id"])
         self.assertEqual(pauses[0]["pause_seconds"], 75)
+        self.assertEqual(pauses[0]["product_id"], "P001")
+        self.assertEqual(pauses[0]["step_no"], 1)
+
+        emp_pauses = self.database.get_employee_pause_logs("1001")
+        self.assertEqual(len(emp_pauses), 1)
+        self.assertEqual(emp_pauses[0]["product_id"], "P001")
+        self.assertEqual(emp_pauses[0]["product_name"], "스마트 액추에이터 A")
+        self.assertEqual(emp_pauses[0]["step_no"], 1)
+        self.assertEqual(emp_pauses[0]["pause_seconds"], 75)
 
     def test_work_sessions_include_nine_hour_status(self):
         with self.database.connect() as connection:

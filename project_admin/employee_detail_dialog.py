@@ -210,10 +210,9 @@ class EmployeeDetailDialog(QDialog):
         self.product_table.setToolTip(
             "제품 작업 기록을 더블클릭하면 STEP 작업시간을 확인할 수 있습니다."
         )
-        self.product_table.itemSelectionChanged.connect(self.clear_pause_history)
         self.product_table.itemDoubleClicked.connect(self.open_selected_product_steps)
         self.pause_table = self._make_table(
-            ["일시정지 시작시간", "작업 재개시간", "일시정지 시간(초)"]
+            ["제품 ID", "제품명", "발생 STEP", "일시정지 시작시간", "작업 재개시간", "일시정지 시간"]
         )
         self.defect_table = self._make_table(
             ["제품 ID", "제품명", "불량 발생 STEP", "유형", "상세", "불량 등록시간"]
@@ -318,7 +317,7 @@ class EmployeeDetailDialog(QDialog):
                   "수동 불량" if row["defect_type"] == "manual" else row["defect_type"],
                   row["detail"], row["defect_at"]] for row in defect_logs],
             )
-            self.clear_pause_history()
+            self.load_pause_history()
             if product_runs:
                 self.product_table.selectRow(0)
         except Exception as error:
@@ -337,22 +336,69 @@ class EmployeeDetailDialog(QDialog):
             self.load_step_pauses(initial_step_run_id)
         dialog.exec_()
 
+    def load_pause_history(self) -> None:
+        """직원의 전체 일시정지 이력을 불러옵니다."""
+        try:
+            self.selected_step_run_id = None
+            pauses = self.database_manager.get_employee_pause_logs(self.employee_id)
+            rows = []
+            for item in pauses:
+                resumed = item["resumed_at"] if item["resumed_at"] else "일시정지 중"
+                duration = (
+                    "진행 중" if item["pause_seconds"] is None
+                    else f"{int(item['pause_seconds'])}초"
+                )
+                rows.append([
+                    item["product_id"],
+                    item["product_name"],
+                    f"STEP {item['step_no']}",
+                    item["paused_at"],
+                    resumed,
+                    duration,
+                ])
+            self._fill_table(self.pause_table, rows)
+            for row_index, item in enumerate(pauses):
+                if item["resumed_at"] is None:
+                    for col in range(len(rows[row_index])):
+                        cell = self.pause_table.item(row_index, col)
+                        if cell:
+                            cell.setForeground(QColor("#826532"))
+        except Exception as error:
+            QMessageBox.critical(
+                self, "DB 오류", f"일시정지 조회 중 오류가 발생했습니다.\n{error}"
+            )
+
     def clear_pause_history(self) -> None:
-        """제품 선택이 바뀌면 이전 STEP의 일시정지 결과를 비웁니다."""
-        self.selected_step_run_id = None
-        self.pause_table.setRowCount(0)
+        """일시정지 이력을 직원의 전체 이력으로 복원합니다."""
+        self.load_pause_history()
 
     def load_step_pauses(self, step_run_id: int) -> None:
         """STEP 모달에서 선택한 STEP의 일시정지 이력을 불러옵니다."""
         try:
             self.selected_step_run_id = int(step_run_id)
             pauses = self.database_manager.get_pause_logs(self.selected_step_run_id)
-            self._fill_table(
-                self.pause_table,
-                [[item["paused_at"], item["resumed_at"],
-                  "진행 중" if item["pause_seconds"] is None
-                  else f"{int(item['pause_seconds'])}초"] for item in pauses],
-            )
+            rows = []
+            for item in pauses:
+                resumed = item["resumed_at"] if item["resumed_at"] else "일시정지 중"
+                duration = (
+                    "진행 중" if item["pause_seconds"] is None
+                    else f"{int(item['pause_seconds'])}초"
+                )
+                rows.append([
+                    item.get("product_id", "—"),
+                    item.get("product_name", "—"),
+                    f"STEP {item.get('step_no', '—')}",
+                    item["paused_at"],
+                    resumed,
+                    duration,
+                ])
+            self._fill_table(self.pause_table, rows)
+            for row_index, item in enumerate(pauses):
+                if item["resumed_at"] is None:
+                    for col in range(len(rows[row_index])):
+                        cell = self.pause_table.item(row_index, col)
+                        if cell:
+                            cell.setForeground(QColor("#826532"))
         except Exception as error:
             QMessageBox.critical(
                 self, "DB 오류", f"일시정지 조회 중 오류가 발생했습니다.\n{error}"

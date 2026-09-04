@@ -1151,15 +1151,42 @@ class DatabaseManager:
         """특정 STEP의 Pause/Resume 시각과 정지 시간을 조회합니다."""
         with self.connect() as connection:
             rows = connection.execute(
-                """SELECT pause_id, paused_at, resumed_at,
-                          CASE WHEN paused_at IS NULL OR resumed_at IS NULL THEN NULL
+                """SELECT pl.pause_id, pr.product_run_id, pr.product_id,
+                          COALESCE(p.product_name, pr.product_id) AS product_name,
+                          sr.step_run_id, sr.step_no, pl.paused_at, pl.resumed_at,
+                          CASE WHEN pl.paused_at IS NULL OR pl.resumed_at IS NULL THEN NULL
                                ELSE MAX(0, CAST(ROUND(
-                                   (julianday(resumed_at) - julianday(paused_at)) * 86400
+                                   (julianday(pl.resumed_at) - julianday(pl.paused_at)) * 86400
                                ) AS INTEGER))
                           END AS pause_seconds
-                   FROM pause_logs
-                   WHERE step_run_id = ? ORDER BY paused_at, pause_id""",
+                   FROM pause_logs AS pl
+                   JOIN step_runs AS sr ON sr.step_run_id = pl.step_run_id
+                   JOIN product_runs AS pr ON pr.product_run_id = sr.product_run_id
+                   LEFT JOIN products AS p ON p.product_id = pr.product_id
+                   WHERE pl.step_run_id = ? ORDER BY pl.paused_at DESC, pl.pause_id DESC""",
                 (step_run_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_employee_pause_logs(self, employee_id: str) -> list[dict]:
+        """직원의 전체 일시정지 이력을 최신순으로 조회합니다."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT pl.pause_id, pr.product_run_id, pr.product_id,
+                          COALESCE(p.product_name, pr.product_id) AS product_name,
+                          sr.step_run_id, sr.step_no, pl.paused_at, pl.resumed_at,
+                          CASE WHEN pl.paused_at IS NULL OR pl.resumed_at IS NULL THEN NULL
+                               ELSE MAX(0, CAST(ROUND(
+                                   (julianday(pl.resumed_at) - julianday(pl.paused_at)) * 86400
+                               ) AS INTEGER))
+                          END AS pause_seconds
+                   FROM pause_logs AS pl
+                   JOIN step_runs AS sr ON sr.step_run_id = pl.step_run_id
+                   JOIN product_runs AS pr ON pr.product_run_id = sr.product_run_id
+                   LEFT JOIN products AS p ON p.product_id = pr.product_id
+                   WHERE pr.employee_id = ?
+                   ORDER BY pl.paused_at DESC, pl.pause_id DESC""",
+                (employee_id,),
             ).fetchall()
         return [dict(row) for row in rows]
 

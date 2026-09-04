@@ -405,6 +405,14 @@ class AdminWindow(QMainWindow):
         """현재 직원 목록에 표시된 변경 직원 행만 한 번의 조회로 갱신합니다."""
         employee_ids = self._pending_employee_ids
         self._pending_employee_ids = set()
+
+        active_dialog = getattr(self, "_active_detail_dialog", None)
+        if active_dialog is not None and active_dialog.employee_id in employee_ids:
+            try:
+                active_dialog.load_employee_data()
+            except Exception:
+                pass
+
         if self.page_stack.currentIndex() != 0 or not employee_ids:
             return
         visible_ids = employee_ids.intersection(self._employee_row_by_id)
@@ -432,7 +440,11 @@ class AdminWindow(QMainWindow):
             self.result_table.item(row, 0).text(), self.database_manager,
             self.tcp_client, self,
         )
-        dialog.exec_()
+        self._active_detail_dialog = dialog
+        try:
+            dialog.exec_()
+        finally:
+            self._active_detail_dialog = None
         self.search_employees()
 
     def search_products(self) -> None:
