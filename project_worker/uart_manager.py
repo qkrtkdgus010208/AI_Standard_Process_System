@@ -1,7 +1,8 @@
 """STM32 UART 수신을 UI와 분리하여 처리하는 Thread 모듈입니다."""
 
-from PyQt5.QtCore import QThread, pyqtSignal
 from typing import Optional
+
+from PyQt5.QtCore import QThread, pyqtSignal
 
 import config
 
@@ -46,15 +47,18 @@ class UartReceiverThread(QThread):
         """UART 연결 후 수신 Loop를 실행합니다."""
         self._running = True
         self._is_connected = False
+
         if config.TEST_MODE or not config.UART_ENABLED:
             self._is_connected = True
             self.status_changed.emit("UART 테스트 모드", True)
             while self._running:
                 self.msleep(250)
             return
+
         if serial is None:
             self.status_changed.emit("pyserial이 설치되지 않았습니다.", False)
             return
+
         try:
             self._serial = serial.Serial(
                 port=self.port,
@@ -69,7 +73,7 @@ class UartReceiverThread(QThread):
                     self.message_received.emit(
                         raw_line.decode("utf-8", errors="replace").strip()
                     )
-        except (OSError, Exception) as error:
+        except Exception as error:
             self._is_connected = False
             self.status_changed.emit(f"UART 연결 실패: {error}", False)
         finally:
@@ -89,7 +93,7 @@ class UartReceiverThread(QThread):
         try:
             self._serial.write((message.strip() + "\n").encode("utf-8"))
             return True
-        except (OSError, Exception):
+        except Exception:
             return False
 
     def simulate_receive(self, message: str) -> None:

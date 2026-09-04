@@ -13,6 +13,22 @@ try:
 except ImportError:  # TEST_MODE에서는 OpenCV가 없어도 UI를 실행할 수 있습니다.
     cv2 = None
 
+_MOCK_W, _MOCK_H = 960, 540
+
+
+def _build_mock_background() -> QImage:
+    """재사용 가능한 Mock 카메라 배경 이미지를 한 번만 생성합니다."""
+    img = QImage(_MOCK_W, _MOCK_H, QImage.Format_RGB32)
+    img.fill(QColor("#263746"))
+    painter = QPainter(img)
+    painter.setPen(QPen(QColor("#40576B"), 1))
+    for x in range(0, _MOCK_W, 48):
+        painter.drawLine(x, 0, x, _MOCK_H)
+    for y in range(0, _MOCK_H, 48):
+        painter.drawLine(0, y, _MOCK_W, y)
+    painter.end()
+    return img
+
 
 class CameraThread(QThread):
     """선택한 Camera Backend에서 Frame을 읽어 UI와 AI에 전달합니다."""
@@ -28,6 +44,8 @@ class CameraThread(QThread):
         self._mock_frame_no = 0
         self._is_connected = False
         self._last_frame_time = 0.0
+        # Mock 배경을 한 번만 생성해 두고 스캔선만 덧그림
+        self._mock_bg: Optional[QImage] = None
 
     def is_connected(self) -> bool:
         """카메라가 정상 연결되어 프레임을 수신 중인지 반환합니다."""
@@ -39,9 +57,7 @@ class CameraThread(QThread):
             return False
         if not self._is_connected or not self.isRunning():
             return True
-        if self._last_frame_time == 0.0:
-            return False
-        return (time.time() - self._last_frame_time) > 3.0
+        return self._last_frame_time != 0.0 and (time.time() - self._last_frame_time) > 3.0
 
     def restart(self) -> None:
         """카메라 스레드를 안전하게 중지한 후 재시작합니다."""
@@ -53,14 +69,17 @@ class CameraThread(QThread):
         self._running = True
         self._is_connected = False
         self._last_frame_time = 0.0
+
         if self.backend == "mock":
             self._is_connected = True
             self.status_changed.emit("테스트 카메라", True)
             self._run_mock_camera()
             return
+
         if cv2 is None:
             self.status_changed.emit("OpenCV가 설치되지 않았습니다.", False)
             return
+
         try:
             self._capture = self._open_capture()
             if self._capture is None or not self._capture.isOpened():
@@ -78,14 +97,10 @@ class CameraThread(QThread):
                     break
                 self._last_frame_time = time.time()
                 self.frame_ready.emit(frame)
-                
-                # 목표 FPS 간격에 맞춰 필요한 시간만큼만 휴식 (하드웨어 블로킹 시간 고려)
+                # 목표 FPS에서 소요된 시간을 빼고 남은 시간만 대기
                 elapsed = time.time() - loop_start
-                sleep_needed = target_interval - elapsed
-                if sleep_needed > 0.002:
-                    self.msleep(int(sleep_needed * 1000))
-                else:
-                    self.msleep(1)
+                sleep_ms = int((target_interval - elapsed) * 1000)
+                self.msleep(max(1, sleep_ms))
         except Exception as error:
             self._is_connected = False
             self.status_changed.emit(f"카메라 오류: {error}", False)
@@ -107,33 +122,31 @@ class CameraThread(QThread):
             capture.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
             return capture
         if self.backend == "csi":
-            return cv2.VideoCapture(
-                config.CSI_GSTREAMER_PIPELINE, cv2.CAP_GSTREAMER
-            )
+            return cv2.VideoCapture(config.CSI_GSTREAMER_PIPELINE, cv2.CAP_GSTREAMER)
         raise ValueError(f"지원하지 않는 Camera Backend: {self.backend}")
 
     def _run_mock_camera(self) -> None:
-        """실제 Camera 없이 움직이는 테스트 Frame을 생성합니다."""
-        width, height = 960, 540
+        """배경을 한 번만 생성하고 스캔선만 매 프레임 갱신하여 CPU를 절약합니다."""
+        if self._mock_bg is None:
+            self._mock_bg = _build_mock_background()
+
+        text_pen = QColor("#D6E1EA")
+        scan_pen = QPen(QColor("#65A1D5"), 3)
+
         while self._running:
-            image = QImage(width, height, QImage.Format_RGB32)
-            image.fill(QColor("#263746"))
-            painter = QPainter(image)
-            painter.setPen(QPen(QColor("#40576B"), 1))
-            for x in range(0, width, 48):
-                painter.drawLine(x, 0, x, height)
-            for y in range(0, height, 48):
-                painter.drawLine(0, y, width, y)
-            scan_x = (self._mock_frame_no * 8) % width
-            painter.setPen(QPen(QColor("#65A1D5"), 3))
-            painter.drawLine(scan_x, 0, scan_x, height)
-            painter.setPen(QColor("#D6E1EA"))
+            # 배경 복사 후 스캔선과 텍스트만 덧그림
+            frame = self._mock_bg.copy()
+            painter = QPainter(frame)
+            scan_x = (self._mock_frame_no * 8) % _MOCK_W
+            painter.setPen(scan_pen)
+            painter.drawLine(scan_x, 0, scan_x, _MOCK_H)
+            painter.setPen(text_pen)
             painter.drawText(
-                image.rect(), Qt.AlignCenter,
+                frame.rect(), Qt.AlignCenter,
                 "TEST MODE  ·  CAMERA PREVIEW\nUSB / CSI Camera 연결 전",
             )
             painter.end()
-            self.frame_ready.emit(image)
+            self.frame_ready.emit(frame)
             self._mock_frame_no += 1
             self.msleep(50)
 

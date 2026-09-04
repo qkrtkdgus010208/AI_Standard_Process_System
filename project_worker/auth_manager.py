@@ -43,11 +43,11 @@ class AuthResult:
 
 def send_json_request(payload: dict) -> dict:
     """Monitoring PC Gateway에 JSON 한 줄 요청을 보내고 응답을 받습니다."""
+    timeout = config.MONITORING_REQUEST_TIMEOUT_SECONDS
     with socket.create_connection(
         (config.MONITORING_PC_IP, config.MONITORING_AUTH_PORT),
-        timeout=config.MONITORING_REQUEST_TIMEOUT_SECONDS,
+        timeout=timeout,
     ) as client:
-        client.settimeout(config.MONITORING_REQUEST_TIMEOUT_SECONDS)
         client.sendall((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
         buffer = b""
         while b"\n" not in buffer and len(buffer) < 65536:
@@ -64,16 +64,17 @@ def check_monitoring_server_connection(timeout: float = 1.0) -> tuple[bool, str]
     """모니터링 PC(관제 서버)와의 TCP 연결 가능 여부를 확인합니다."""
     if config.TEST_MODE:
         return True, "테스트 모드 (서버 가상 연결)"
+    addr = f"{config.MONITORING_PC_IP}:{config.MONITORING_AUTH_PORT}"
     try:
         with socket.create_connection(
             (config.MONITORING_PC_IP, config.MONITORING_AUTH_PORT),
             timeout=timeout,
         ):
-            return True, f"관제 서버 연결 ({config.MONITORING_PC_IP}:{config.MONITORING_AUTH_PORT})"
+            return True, f"관제 서버 연결 ({addr})"
     except ConnectionRefusedError:
-        return False, f"서버 연결 거부 (포트 닫힘: {config.MONITORING_PC_IP}:{config.MONITORING_AUTH_PORT})"
+        return False, f"서버 연결 거부 (포트 닫힘: {addr})"
     except socket.timeout:
-        return False, f"서버 응답 시간 초과 ({config.MONITORING_PC_IP}:{config.MONITORING_AUTH_PORT})"
+        return False, f"서버 응답 시간 초과 ({addr})"
     except OSError as e:
         return False, f"서버 연결 실패 ({e})"
 
@@ -93,60 +94,53 @@ class ServerCheckThread(QThread):
         self.check_finished.emit(ok, msg)
 
 
+def _extract_int(raw: dict, keys: tuple) -> Optional[int]:
+    """dict에서 여러 키를 순서대로 탐색하여 정수값을 반환합니다."""
+    for k in keys:
+        if k in raw:
+            try:
+                return int(raw[k])
+            except (ValueError, TypeError):
+                pass
+    return None
+
+
 def parse_work_state_data(raw: Any) -> Optional[dict]:
     """서버 응답에서 이전 작업 상태 데이터를 정규화하여 추출합니다."""
     if not isinstance(raw, dict):
         return None
 
-    if "work_state" in raw and isinstance(raw["work_state"], dict):
-        raw = raw["work_state"]
-    elif "state_data" in raw and isinstance(raw["state_data"], dict):
-        raw = raw["state_data"]
+    # 중첩 구조 평탄화
+    raw = raw.get("work_state") or raw.get("state_data") or raw
+    if not isinstance(raw, dict):
+        return None
 
     product_id = str(
-        raw.get("product_id")
-        or raw.get("productId")
-        or raw.get("code")
-        or raw.get("product_code")
-        or ""
+        raw.get("product_id") or raw.get("productId")
+        or raw.get("code") or raw.get("product_code") or ""
     ).strip()
-
     if not product_id:
         return None
 
     product_name = str(
-        raw.get("product_name")
-        or raw.get("productName")
-        or raw.get("name")
-        or raw.get("item_name")
-        or product_id
+        raw.get("product_name") or raw.get("productName")
+        or raw.get("name") or raw.get("item_name") or product_id
     ).strip()
 
-    total_steps = 1
-    for k in ("total_steps", "totalSteps", "steps", "step_count", "process_count"):
-        if k in raw:
-            try:
-                total_steps = int(raw[k])
-                break
-            except (ValueError, TypeError):
-                pass
-    total_steps = max(1, total_steps)
+    total_steps = max(1, _extract_int(
+        raw, ("total_steps", "totalSteps", "steps", "step_count", "process_count")
+    ) or 1)
 
-    current_step = 0
-    for k in ("current_step", "currentStep", "step", "step_no"):
-        if k in raw:
-            try:
-                current_step = int(raw[k])
-                break
-            except (ValueError, TypeError):
-                pass
+    current_step = _extract_int(
+        raw, ("current_step", "currentStep", "step", "step_no")
+    ) or 0
 
     state = str(raw.get("state") or raw.get("status") or "running").strip().lower()
     last_result = str(raw.get("last_result") or raw.get("lastResult") or "waiting").strip().lower()
     defect_type = str(raw.get("defect_type") or raw.get("defectType") or "").strip()
     detail = str(raw.get("detail") or "").strip()
 
-    # 완료된 작업이거나 0단계 대기 상태인 경우 복원 대상 아님
+    # 복원 불필요한 상태 필터
     if state == "complete" or (current_step == 0 and state == "idle"):
         return None
 
@@ -190,29 +184,25 @@ class AuthRequestThread(QThread):
             return
         try:
             response = send_json_request({
-                "type": "auth", "employee_id": self.employee_id,
+                "type": "auth",
+                "employee_id": self.employee_id,
                 "password": self.password,
             })
             if not response.get("ok"):
                 self.completed.emit(AuthResult(False, response.get("message", "로그인 실패")))
                 return
             employee = response["employee"]
-            token = str(response["token"])
-
-            # 방법 1: 서버 로그인(auth) 응답의 work_state에서 이전 작업 기록 추출
             saved_raw = (
                 response.get("work_state")
                 or response.get("state")
                 or employee.get("work_state")
             )
-            saved_state = parse_work_state_data(saved_raw)
-
             session = WorkerSession(
                 employee_id=str(employee["employee_id"]),
                 name=str(employee["name"]),
                 role=str(employee["role"]),
-                token=token,
-                saved_state=saved_state,
+                token=str(response["token"]),
+                saved_state=parse_work_state_data(saved_raw),
             )
             self.completed.emit(AuthResult(True, "로그인 성공", session))
         except (OSError, ValueError, KeyError, ConnectionError) as error:
@@ -223,49 +213,40 @@ def parse_product_item(item: Union[dict, list, tuple]) -> Optional[ProductInfo]:
     """모니터링 PC 응답 아이템을 ProductInfo로 변환합니다."""
     if isinstance(item, dict):
         pid = str(
-            item.get("product_id")
-            or item.get("id")
-            or item.get("code")
-            or item.get("product_code")
-            or ""
+            item.get("product_id") or item.get("id")
+            or item.get("code") or item.get("product_code") or ""
         ).strip()
         pname = str(
-            item.get("product_name")
-            or item.get("name")
-            or item.get("title")
-            or item.get("item_name")
-            or ""
+            item.get("product_name") or item.get("name")
+            or item.get("title") or item.get("item_name") or ""
         ).strip()
-        total_steps = 1
-        for k in ("total_steps", "steps", "total_step", "step_count", "process_count"):
-            if k in item:
-                try:
-                    total_steps = int(item[k])
-                    break
-                except (ValueError, TypeError):
-                    pass
-        if pid and pname:
-            return ProductInfo(product_id=pid, product_name=pname, total_steps=max(1, total_steps))
-    elif isinstance(item, (list, tuple)) and len(item) >= 2:
-        pid = str(item[0]).strip()
-        pname = str(item[1]).strip()
+        if not pid or not pname:
+            return None
+        total_steps = _extract_int(
+            item, ("total_steps", "steps", "total_step", "step_count", "process_count")
+        ) or 1
+        return ProductInfo(product_id=pid, product_name=pname, total_steps=max(1, total_steps))
+
+    if isinstance(item, (list, tuple)) and len(item) >= 2:
+        pid, pname = str(item[0]).strip(), str(item[1]).strip()
+        if not pid or not pname:
+            return None
         total_steps = 1
         if len(item) > 2:
             try:
                 total_steps = int(item[2])
             except (ValueError, TypeError):
-                total_steps = 1
-        if pid and pname:
-            return ProductInfo(product_id=pid, product_name=pname, total_steps=max(1, total_steps))
+                pass
+        return ProductInfo(product_id=pid, product_name=pname, total_steps=max(1, total_steps))
+
     return None
 
 
 def fetch_products_from_monitoring_pc(token: str = "") -> list[ProductInfo]:
     """모니터링 PC Gateway에 요청하여 products 테이블의 제품 목록을 조회합니다."""
-    types_to_try = ["products", "get_products"]
-    last_error_message = None
+    last_error: Optional[str] = None
 
-    for req_type in types_to_try:
+    for req_type in ("products", "get_products"):
         try:
             payload = {"type": req_type}
             if token:
@@ -274,29 +255,20 @@ def fetch_products_from_monitoring_pc(token: str = "") -> list[ProductInfo]:
             if not isinstance(response, dict):
                 continue
             if response.get("ok") is False:
-                last_error_message = response.get("message", "요청 실패")
+                last_error = response.get("message", "요청 실패")
                 continue
-
             raw_list = (
-                response.get("products")
-                or response.get("data")
-                or response.get("items")
-                or response.get("product_list")
-                or []
+                response.get("products") or response.get("data")
+                or response.get("items") or response.get("product_list") or []
             )
             if isinstance(raw_list, list):
-                products = []
-                for item in raw_list:
-                    prod = parse_product_item(item)
-                    if prod is not None:
-                        products.append(prod)
-                return products
+                return [p for p in (parse_product_item(i) for i in raw_list) if p is not None]
         except (OSError, ConnectionError, ValueError) as err:
-            last_error_message = f"네트워크 오류: {err}"
+            last_error = f"네트워크 오류: {err}"
             break
 
-    if last_error_message:
-        raise ConnectionError(last_error_message)
+    if last_error:
+        raise ConnectionError(last_error)
     return []
 
 
@@ -315,13 +287,10 @@ class ProductFetchThread(QThread):
         if config.TEST_MODE:
             fallback = [
                 ProductInfo(p["product_id"], p["product_name"], int(p["total_steps"]))
-                for p in getattr(config, "DEFAULT_PRODUCTS", [])
+                for p in config.DEFAULT_PRODUCTS
             ]
-            self.products_fetched.emit(
-                fallback, True, f"TEST MODE 제품 {len(fallback)}건 로드 완료"
-            )
+            self.products_fetched.emit(fallback, True, f"TEST MODE 제품 {len(fallback)}건 로드 완료")
             return
-
         try:
             products = fetch_products_from_monitoring_pc(self.token)
             if products:
@@ -344,12 +313,12 @@ class MonitoringEventThread(QThread):
     def __init__(self, session: WorkerSession, parent=None):
         super().__init__(parent)
         self.session = session
-        self._queue = queue.Queue()
+        self._queue: queue.Queue = queue.Queue()
         self._running = False
 
     def enqueue_state(self, state: dict) -> None:
-        """직원번호 입력 없이 현재 Session 소유자의 상태만 Queue에 넣습니다."""
-        payload = {
+        """현재 Session 소유자의 상태를 Queue에 넣습니다."""
+        self._queue.put({
             "type": "state",
             "token": self.session.token,
             "product_id": state.get("product_id", ""),
@@ -361,8 +330,7 @@ class MonitoringEventThread(QThread):
             "event": state.get("event", "state_change"),
             "defect_type": state.get("defect_type", ""),
             "detail": state.get("detail", ""),
-        }
-        self._queue.put(payload)
+        })
 
     def run(self) -> None:
         """Queue의 작업상태를 순서대로 Monitoring PC에 전송합니다."""
@@ -380,10 +348,9 @@ class MonitoringEventThread(QThread):
                 continue
             try:
                 response = send_json_request(payload)
-                if not response.get("ok"):
-                    self.status_changed.emit(response.get("message", "상태 전송 실패"), False)
-                else:
-                    self.status_changed.emit("상태 전송 완료", True)
+                ok = response.get("ok")
+                msg = "상태 전송 완료" if ok else response.get("message", "상태 전송 실패")
+                self.status_changed.emit(msg, bool(ok))
             except (OSError, ValueError, ConnectionError) as error:
                 self.status_changed.emit(f"상태 전송 실패: {error}", False)
 

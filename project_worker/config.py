@@ -1,13 +1,11 @@
 """Jetson 작업자 프로그램의 변경 가능한 설정값입니다."""
 
-from pathlib import Path
-
 
 # Jetson 장비 연결 전에는 True로 유지합니다.
 TEST_MODE = False
 
 # UART / STM32 설정 (Jetson/Linux 장치 경로)
-UART_ENABLED = not TEST_MODE
+UART_ENABLED = True        # TEST_MODE와 독립적으로 제어. False면 UART 스레드가 대기 루프로만 실행됩니다.
 UART_PORT = "/dev/ttyUSB0"  # 필요 시 "/dev/ttyACM0"으로 변경
 UART_BAUDRATE = 115200
 UART_TIMEOUT_SECONDS = 0.2
@@ -41,8 +39,6 @@ CSI_GSTREAMER_PIPELINE = (
 
 # AI 설정: 현재는 mock, 이후 pytorch/tensorrt 구현체로 교체 가능
 AI_BACKEND = "mock"
-AI_MODEL_PATH = Path(__file__).resolve().parent / "models" / "model.engine"
-AI_INFERENCE_INTERVAL_MS = 800
 
 # TEST_MODE용 기본 제품 목록
 DEFAULT_PRODUCTS = [

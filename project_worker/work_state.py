@@ -4,6 +4,9 @@ from dataclasses import asdict, dataclass
 
 from PyQt5.QtCore import QObject, pyqtSignal
 
+# 유효한 작업 상태 값
+_VALID_STATES = frozenset(("running", "paused"))
+
 
 @dataclass
 class WorkSnapshot:
@@ -23,7 +26,7 @@ class WorkSnapshot:
 
 
 class WorkStateController(QObject):
-    """시작·Pause·Reset·PASS/FAIL에 따른 작업 상태를 관리합니다."""
+    """시작·Pause·Resume·PASS/FAIL·불량등록에 따른 작업 상태를 관리합니다."""
 
     state_changed = pyqtSignal(dict)
     log_created = pyqtSignal(str, str)
@@ -34,6 +37,16 @@ class WorkStateController(QObject):
 
     def _publish(self) -> None:
         self.state_changed.emit(asdict(self.snapshot))
+
+    def _reset_to_idle(self, detail: str) -> None:
+        """내부 공용 메서드: 작업 상태를 0단계 대기(idle)로 초기화하고 전송합니다."""
+        self.snapshot.current_step = 0
+        self.snapshot.state = "idle"
+        self.snapshot.last_result = "waiting"
+        self.snapshot.event = "init"
+        self.snapshot.defect_type = ""
+        self.snapshot.detail = detail
+        self._publish()
 
     def configure(self, employee_id: str, employee_name: str, product_id: str,
                   product_name: str, total_steps: int) -> None:
@@ -61,11 +74,8 @@ class WorkStateController(QObject):
         total_steps = max(1, int(saved_state.get("total_steps") or 1))
         current_step = max(1, min(total_steps, int(saved_state.get("current_step") or 1)))
         state = str(saved_state.get("state") or "running").strip()
-        if state not in ("running", "paused"):
+        if state not in _VALID_STATES:
             state = "running"
-        last_result = str(saved_state.get("last_result") or "waiting").strip()
-        defect_type = str(saved_state.get("defect_type") or "").strip()
-        detail = str(saved_state.get("detail") or f"STEP {current_step} 이전 작업 복원").strip()
 
         self.snapshot = WorkSnapshot(
             employee_id=employee_id.strip(),
@@ -75,10 +85,10 @@ class WorkStateController(QObject):
             total_steps=total_steps,
             current_step=current_step,
             state=state,
-            last_result=last_result,
+            last_result=str(saved_state.get("last_result") or "waiting").strip(),
             event="restore",
-            defect_type=defect_type,
-            detail=detail,
+            defect_type=str(saved_state.get("defect_type") or "").strip(),
+            detail=str(saved_state.get("detail") or f"STEP {current_step} 이전 작업 복원").strip(),
         )
         self.log_created.emit(
             "success",
@@ -94,7 +104,6 @@ class WorkStateController(QObject):
         if self.snapshot.state == "paused":
             self.resume()
             return
-
         self.snapshot.current_step = 1
         self.snapshot.state = "running"
         self.snapshot.last_result = "waiting"
@@ -129,42 +138,32 @@ class WorkStateController(QObject):
         self._publish()
 
     def register_defect(self) -> None:
-        """현재 진행 중인 작업의 수동 불량을 등록(defect 상태 서버 전송)하고 처음(0단계 대기)으로 초기화합니다."""
+        """수동 불량을 등록·전송하고 0단계 대기 상태로 초기화합니다."""
         if self.snapshot.state != "running" or self.snapshot.current_step <= 0:
             self.log_created.emit("warning", "작업이 진행 중일 때만 불량을 등록할 수 있습니다.")
             return
-
-        # 1. 현재 공정 단계의 수동 불량(defect) 상태를 모니터링 PC로 전송
+        # 1단계: 수동 불량 상태 전송
+        step = self.snapshot.current_step
         self.snapshot.last_result = "defect"
         self.snapshot.event = "manual_defect"
         self.snapshot.defect_type = "manual"
-        self.snapshot.detail = f"STEP {self.snapshot.current_step} 작업자 수동 불량 등록"
-        self.log_created.emit("error", f"STEP {self.snapshot.current_step} 수동 불량 등록 (서버 전송)")
+        self.snapshot.detail = f"STEP {step} 작업자 수동 불량 등록"
+        self.log_created.emit("error", f"STEP {step} 수동 불량 등록 (서버 전송)")
         self._publish()
-
-        # 2. 작업을 처음(0단계 대기)으로 초기화 후 초기화 상태를 모니터링 PC로 전송
-        self.snapshot.current_step = 0
-        self.snapshot.state = "idle"
-        self.snapshot.last_result = "waiting"
-        self.snapshot.event = "init"
-        self.snapshot.defect_type = ""
-        self.snapshot.detail = "불량 등록 후 초기화"
+        # 2단계: idle 초기화 전송
         self.log_created.emit("info", "불량 등록 후 작업이 처음으로 초기화되었습니다 (0단계 대기).")
-        self._publish()
-
-    def reset(self) -> None:
-        """현재 작업의 STEP과 판정 상태를 초기화합니다."""
-        self.register_defect()
+        self._reset_to_idle("불량 등록 후 초기화")
 
     def apply_judgement(self, result: str, detail: str = "") -> None:
         """AI 또는 UART의 PASS/FAIL 결과를 현재 STEP에 반영합니다."""
-        normalized = result.upper()
         if self.snapshot.state != "running":
             self.log_created.emit("warning", "작업 시작 후 판정할 수 있습니다.")
             return
+        normalized = result.upper()
         if normalized not in ("PASS", "FAIL"):
             self.log_created.emit("error", f"알 수 없는 판정값입니다: {result}")
             return
+
         if normalized == "FAIL":
             self.snapshot.last_result = "fail"
             self.snapshot.event = "ai_fail"
@@ -174,9 +173,12 @@ class WorkStateController(QObject):
             self._publish()
             return
 
+        # PASS 처리
         completed_step = self.snapshot.current_step
         self.log_created.emit("success", detail or f"STEP {completed_step} 판정: PASS")
+
         if completed_step >= self.snapshot.total_steps:
+            # 전체 공정 완료 → complete 전송 후 idle 복귀
             self.snapshot.state = "complete"
             self.snapshot.last_result = "pass"
             self.snapshot.event = "complete"
@@ -184,16 +186,9 @@ class WorkStateController(QObject):
             self.snapshot.detail = "전체 조립 공정 완료"
             self.log_created.emit("success", "전체 조립 공정이 완료되었습니다.")
             self._publish()
-
-            # 완료 후 다시 처음(0단계 대기)으로 복귀하여 다시 작업 시작 가능하도록 설정
-            self.snapshot.current_step = 0
-            self.snapshot.state = "idle"
-            self.snapshot.last_result = "waiting"
-            self.snapshot.event = "init"
-            self.snapshot.defect_type = ""
-            self.snapshot.detail = "공정 완료 후 초기화"
-            self._publish()
+            self._reset_to_idle("공정 완료 후 초기화")
         else:
+            # 다음 STEP으로 진입
             self.snapshot.current_step += 1
             self.snapshot.last_result = "waiting"
             self.snapshot.event = "step_pass"
