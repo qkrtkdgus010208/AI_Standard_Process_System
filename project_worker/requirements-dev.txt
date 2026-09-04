@@ -1,0 +1,10 @@
+# 일반 개발 PC (Ubuntu/Linux)에서 TEST_MODE로 실행할 때 사용합니다.
+# Jetson 배포 시에는 이 파일 대신 requirements.txt와 apt를 사용하세요.
+#
+# [설치 명령]
+# python3 -m venv .venv && source .venv/bin/activate
+# pip install -r requirements-dev.txt
+PyQt5>=5.15
+opencv-python>=4.5
+pyserial>=3.5
+numpy>=1.19

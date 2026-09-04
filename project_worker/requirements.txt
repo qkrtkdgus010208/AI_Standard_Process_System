@@ -1,3 +1,7 @@
 # Jetson에서는 PyQt5와 OpenCV를 apt로 설치하는 것을 권장합니다.
+#
+# [설치 명령]
+# sudo apt update && sudo apt install -y python3-pip python3-pyqt5 python3-opencv python3-serial python3-numpy
+# python3 -m pip install -r requirements.txt
 pyserial>=3.5
 numpy>=1.19
