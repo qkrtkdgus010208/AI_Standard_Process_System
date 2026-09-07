@@ -1,85 +1,168 @@
 #include "buzzer.h"
 #include "timer.h"
+#include "key.h"
+#include "led.h"
 
-void Buzzer_Beep(unsigned char tone, int duration)
+extern volatile led_step_t led_step;
+extern volatile uint8_t is_pause;
+
+static const SoundNote_t Notes_Pass[] = {
+	{1047, 120},
+	{0, 50},
+	{784, 180},
+	{0, 0}
+};
+
+static const SoundNote_t Notes_Fail[] = {
+	{350, 220},
+	{0, 80},
+	{350, 220},
+	{0, 0}
+};
+
+static const SoundNote_t Notes_Complete[] = {
+	{523, 100},
+	{659, 100},
+	{784, 100},
+	{1047, 320},
+	{0, 0}
+};
+
+static const SoundNote_t Notes_Pause[] = {
+	{784, 80},
+	{0, 30},
+	{523, 130},
+	{0, 0}
+};
+
+static const SoundNote_t Notes_Resume[] = {
+	{523, 80},
+	{0, 30},
+	{784, 130},
+	{0, 0}
+};
+
+static const SoundNote_t Notes_Defect[] = {
+	{440, 100},
+	{0, 40},
+	{330, 100},
+	{0, 40},
+	{220, 260},
+	{0, 0}
+};
+
+static const SoundNote_t *Current_Seq = 0;
+static uint8_t Seq_Idx = 0;
+static volatile uint8_t Is_Playing = 0;
+static uint8_t Lock_Buttons = 0;
+
+void Buzzer_Init(void)
 {
-	const static unsigned short tone_value[] = {261,277,293,311,329,349,369,391,415,440,466,493,523,554,587,622,659,698,739,783,830,880,932,987};
-
-	TIM3_Freq_Generation_DR50(tone_value[tone]);
-	TIM2_Delay_Interrupt_Enable(1, duration);
-	TIM3_Out_Stop();
-}
-
-void Wrong_Sound(void)
-{
-	TIM3_Freq_Generation_DR50(350);
-}
-
-void Correct_Sound(uint32_t freq)
-{
-	TIM3_Freq_Generation_DR50(freq);
+	TIM3_Out_Init();
+	Is_Playing = 0;
+	Current_Seq = 0;
+	Seq_Idx = 0;
 }
 
 void Buzzer_Stop(void)
 {
 	TIM3_Out_Stop();
+	TIM2_Delay_Interrupt_Enable(0, 0);
+	Is_Playing = 0;
+	Current_Seq = 0;
+	Seq_Idx = 0;
 }
 
-void Buzzer_Delay_ms(int time)
+int Buzzer_Is_Playing(void)
 {
-	TIM2_Delay_Interrupt_Enable(1, time);
+	return Is_Playing;
 }
 
-
-#if 0
-int i;
-	enum key{C1, C1_, D1, D1_, E1, F1, F1_, G1, G1_, A1, A1_, B1, C2, C2_, D2, D2_, E2, F2, F2_, G2, G2_, A2, A2_, B2};
-	enum note{N16=BASE/4, N8=BASE/2, N4=BASE, N2=BASE*2, N1=BASE*4};
-	const int song1[][2] = {{G1,N4},{G1,N4},{E1,N8},{F1,N8},{G1,N4},{A1,N4},{A1,N4},{G1,N2},{G1,N4},{C2,N4},{E2,N4},{D2,N8},{C2,N8},{D2,N2}};
-	const char * note_name[] = {"C1", "C1#", "D1", "D1#", "E1", "F1", "F1#", "G1", "G1#", "A1", "A1#", "B1", "C2", "C2#", "D2", "D2#", "E2", "F2", "F2#", "G2", "G2#", "A2", "A2#", "B2"};
-
-	TIM3_Out_Init();
-
-	while(1)
+void Buzzer_Play(SoundId_t sound_id)
+{
+	switch (sound_id)
 	{
-		for(int i = 0; i < 2; i ++)
+	case SOUND_PASS:
+		Current_Seq = Notes_Pass;
+		Lock_Buttons = 1;
+		break;
+	case SOUND_FAIL:
+		Current_Seq = Notes_Fail;
+		Lock_Buttons = 1;
+		break;
+	case SOUND_COMPLETE:
+		Current_Seq = Notes_Complete;
+		Lock_Buttons = 1;
+		break;
+	case SOUND_PAUSE:
+		Current_Seq = Notes_Pause;
+		Lock_Buttons = 0;
+		break;
+	case SOUND_RESUME:
+		Current_Seq = Notes_Resume;
+		Lock_Buttons = 0;
+		break;
+	case SOUND_DEFECT:
+		Current_Seq = Notes_Defect;
+		Lock_Buttons = 1;
+		break;
+	default:
+		Buzzer_Stop();
+		return;
+	}
+
+	TIM3_Out_Stop();
+	TIM2_Delay_Interrupt_Enable(0, 0);
+
+	Seq_Idx = 0;
+	Is_Playing = 1;
+
+	if (Lock_Buttons)
+	{
+		Btn_ISR_Enable(0, 0, 0);
+	}
+
+	if (Current_Seq[0].freq > 0)
+	{
+		TIM3_Freq_Generation_DR50(Current_Seq[0].freq);
+	}
+	else
+	{
+		TIM3_Out_Stop();
+	}
+	TIM2_Delay_Interrupt_Enable(1, Current_Seq[0].duration);
+}
+
+void Buzzer_Process_Timer(void)
+{
+	if (!Is_Playing || Current_Seq == 0)
+		return;
+
+	Seq_Idx++;
+	if (Current_Seq[Seq_Idx].duration == 0)
+	{
+		Buzzer_Stop();
+		if (Lock_Buttons)
 		{
-			printf("Wrong\n");
-			TIM3_Out_PWM_Generation(50, 50);
-			TIM2_Delay(100);
-
-			TIM3_Out_PWM_Generation(50, 0);
-			TIM2_Delay(100);
+			if (led_step == LED_STEP0)
+			{
+				Btn_ISR_Enable(0, 0, 0);
+			}
+			else
+			{
+				Btn_ISR_Enable(!is_pause, 1, 1);
+			}
 		}
-
-		TIM2_Delay(1000);
+		return;
 	}
 
-	
-	for(;;);
-	printf("Buzeer_Beep Start\n");
-	printf("%s ", note_name[C1]);
-	Buzzer_Beep(C1,N4);
-	printf("%s ", note_name[D1]);
-	Buzzer_Beep(D1,N4);
-	printf("%s ", note_name[E1]);
-	Buzzer_Beep(E1,N4);
-	printf("%s ", note_name[F1]);
-	Buzzer_Beep(F1,N4);
-	printf("%s ", note_name[G1]);
-	Buzzer_Beep(G1,N4);
-	printf("%s ", note_name[A1]);
-	Buzzer_Beep(A1,N4);
-	printf("%s ", note_name[B1]);
-	Buzzer_Beep(B1,N4);
-	printf("%s ", note_name[C2]);
-	Buzzer_Beep(C2,N4);
-
-	printf("\nSong Play\n");
-
-	for(i=0; i<(sizeof(song1)/sizeof(song1[0])); i++)
+	if (Current_Seq[Seq_Idx].freq > 0)
 	{
-		printf("%s ", note_name[song1[i][0]]);
-		Buzzer_Beep(song1[i][0], song1[i][1]);
+		TIM3_Freq_Generation_DR50(Current_Seq[Seq_Idx].freq);
 	}
-#endif
+	else
+	{
+		TIM3_Out_Stop();
+	}
+	TIM2_Delay_Interrupt_Enable(1, Current_Seq[Seq_Idx].duration);
+}

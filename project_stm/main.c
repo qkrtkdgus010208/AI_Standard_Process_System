@@ -10,31 +10,24 @@ static void Sys_Init(int baud)
 	setvbuf(stdout, NULL, _IONBF, 0);
 	LED_Init();
 	UART2_RX_Interrupt_Enable(1);
-	TIM3_Out_Init();
+	Buzzer_Init();
 	Macro_Set_Bit(RCC->APB1ENR, 0); // TIM2 Clock Enable
 }
 
 volatile uint8_t Uart_data[4];
 volatile uint8_t Uart_Data_In = 0;
 
-
 extern volatile btn_status_t btn_state;
 extern volatile uint8_t is_pause;
 extern volatile uint8_t TIM2_Expired;
 
+volatile led_step_t led_step = LED_STEP0;
 
 void Main(void)
 {
-	volatile uint8_t fail_in = 0;
-	volatile uint8_t fail_task_cnt = 0;
-	volatile uint8_t pass_stage = 0;
-	volatile uint8_t pass_task_cnt = 0;
 	static const char *Uart_Tx_Dataset[] = {"Check\n", "Pause\n", "Resume\n", "Reset\n"};
-	led_step_t led_step = LED_STEP0;
-
 
 	Sys_Init(115200);
-	// printf("Buzzer Test!!\n");
 
 	while (1)
 	{
@@ -48,13 +41,7 @@ void Main(void)
 				Step_LED_On(led_step);
 				Fail_LED_Off();
 				Buzzer_Stop();
-				TIM2_Delay_Interrupt_Enable(0, 0);
-				pass_stage = 0;
-				pass_task_cnt = 0;
-				fail_in = 0;
-				fail_task_cnt = 0;
 				is_pause = 0;
-				TIM2_Expired = 0;
 				break;
 
 			case 'P':
@@ -62,58 +49,57 @@ void Main(void)
 					break;
 
 				Fail_LED_Off();
-				fail_in = 0;
-				fail_task_cnt = 0;
 				is_pause = 0;
-
 				Step_LED_Off(led_step);
 				led_step = (led_step + 1) % 10;
 				Step_LED_On(led_step);
-
-				// 부저 재생 중 버튼 인터럽트 차단 (채터링 및 중복 Check 전송 방지)
-				Btn_ISR_Enable(0, 0, 0);
-
-				Buzzer_Stop();
-				TIM2_Delay_Interrupt_Enable(0, 0);
-
-				pass_stage = 1;
-				pass_task_cnt = 0;
-				TIM2_Expired = 0;
-				Correct_Sound(1047);
-				Buzzer_Delay_ms(120);
+				Buzzer_Play(SOUND_PASS);
 				break;
 
 			case 'F':
-				pass_stage = 0;
-				pass_task_cnt = 0;
-				fail_in = 1;
-				fail_task_cnt = 0;
-				is_pause = 0;
-				TIM2_Expired = 0;
-
 				Fail_LED_On();
-				Btn_ISR_Enable(0, 0, 0);
-
-				Buzzer_Stop();
-				TIM2_Delay_Interrupt_Enable(0, 0);
-				Wrong_Sound();
-				Buzzer_Delay_ms(250);
+				is_pause = 0;
+				Buzzer_Play(SOUND_FAIL);
 				break;
 
-			case 'R':
-				Btn_ISR_Enable(0, 0, 0);
+			case 'C': // 모든 STEP 완료 / 작업 정상 종료
+				Fail_LED_Off();
 				Step_LED_Off(led_step);
 				led_step = LED_STEP0;
 				btn_state = BTN_RELEASED;
-				pass_stage = 0;
-				pass_task_cnt = 0;
-				fail_in = 0;
-				fail_task_cnt = 0;
 				is_pause = 0;
-				TIM2_Expired = 0;
+				Btn_ISR_Enable(0, 0, 0);
+				Buzzer_Play(SOUND_COMPLETE);
+				break;
+
+			case 'R': // 불량 등록 / 리셋
 				Fail_LED_Off();
-				Buzzer_Stop();
-				TIM2_Delay_Interrupt_Enable(0, 0);
+				Step_LED_Off(led_step);
+				led_step = LED_STEP0;
+				btn_state = BTN_RELEASED;
+				is_pause = 0;
+				Btn_ISR_Enable(0, 0, 0);
+				Buzzer_Play(SOUND_DEFECT);
+				break;
+
+			case 'U': // Qt GUI에서 일시정지 명령
+				if (led_step != LED_STEP0 && is_pause == 0)
+				{
+					is_pause = 1;
+					Step_LED_Off(led_step);
+					Btn_ISR_Enable(0, 1, 1);
+					Buzzer_Play(SOUND_PAUSE);
+				}
+				break;
+
+			case 'M': // Qt GUI에서 작업재개 명령
+				if (led_step != LED_STEP0 && is_pause == 1)
+				{
+					is_pause = 0;
+					Step_LED_On(led_step);
+					Btn_ISR_Enable(1, 1, 1);
+					Buzzer_Play(SOUND_RESUME);
+				}
 				break;
 
 			default:
@@ -126,33 +112,7 @@ void Main(void)
 		if (TIM2_Expired)
 		{
 			TIM2_Expired = 0;
-
-			if (pass_stage)
-			{
-				pass_task_cnt++;
-				Pass_Buzzer(pass_task_cnt);
-				if (pass_task_cnt >= 3)
-				{
-					pass_stage = 0;
-					pass_task_cnt = 0;
-					Buzzer_Stop();
-					TIM2_Delay_Interrupt_Enable(0, 0);
-					Btn_ISR_Enable(1, 1, 1);
-				}
-			}
-			else if (fail_in)
-			{
-				fail_task_cnt++;
-				Fail_LED_Buzzer(fail_task_cnt);
-				if (fail_task_cnt >= 3)
-				{
-					fail_in = 0;
-					fail_task_cnt = 0;
-					Buzzer_Stop();
-					TIM2_Delay_Interrupt_Enable(0, 0);
-					Btn_ISR_Enable(1, 1, 1);
-				}
-			}
+			Buzzer_Process_Timer();
 		}
 
 		switch (btn_state)
@@ -196,13 +156,10 @@ void Main(void)
 			if (is_pause == 0)
 			{
 				is_pause = 1;
-				Buzzer_Stop();
-				TIM2_Delay_Interrupt_Enable(0, 0);
-				pass_stage = 0;
-				pass_task_cnt = 0;
 				Uart2_Send_String(Uart_Tx_Dataset[1]);
 				Step_LED_Off(led_step);
 				Btn_ISR_Enable(0, 1, 1);
+				Buzzer_Play(SOUND_PAUSE);
 			}
 			else
 			{
@@ -210,6 +167,7 @@ void Main(void)
 				Uart2_Send_String(Uart_Tx_Dataset[2]);
 				Step_LED_On(led_step);
 				Btn_ISR_Enable(1, 1, 1);
+				Buzzer_Play(SOUND_RESUME);
 			}
 
 			btn_state = BTN_RELEASED;
@@ -230,64 +188,10 @@ void Main(void)
 			Step_LED_Off(led_step);
 			led_step = LED_STEP0;
 			btn_state = BTN_RELEASED;
-			pass_stage = 0;
-			pass_task_cnt = 0;
-			fail_in = 0;
-			fail_task_cnt = 0;
 			is_pause = 0;
-			TIM2_Expired = 0;
 			Fail_LED_Off();
-			Buzzer_Stop();
-			TIM2_Delay_Interrupt_Enable(0, 0);
+			Buzzer_Play(SOUND_DEFECT);
 			break;
 		}
-	}
-}
-
-void Fail_LED_Buzzer(uint8_t fail_task_cnt)
-{
-	switch (fail_task_cnt)
-	{
-	case 0:
-		break;
-
-	case 1:
-		Buzzer_Stop();
-		Buzzer_Delay_ms(100);
-		break;
-
-	case 2:
-		Wrong_Sound();
-		Buzzer_Delay_ms(250);
-		break;
-
-	case 3:
-	default:
-		Buzzer_Stop();
-		break;
-	}
-}
-
-void Pass_Buzzer(uint8_t pass_task_cnt)
-{
-	switch (pass_task_cnt)
-	{
-	case 0:
-		break;
-
-	case 1:
-		Buzzer_Stop();
-		Buzzer_Delay_ms(60);
-		break;
-
-	case 2:
-		Correct_Sound(784);
-		Buzzer_Delay_ms(200);
-		break;
-
-	case 3:
-	default:
-		Buzzer_Stop();
-		break;
 	}
 }

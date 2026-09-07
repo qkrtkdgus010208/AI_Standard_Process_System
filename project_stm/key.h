@@ -19,3 +19,6 @@ void Btn_ISR_Enable(int check_en, int pause_en, int reset_en);
 void EXTI3_IRQHandler(void);
 void EXTI4_IRQHandler(void);
 void EXTI9_5_IRQHandler(void);
+
+extern volatile btn_status_t btn_state;
+extern volatile uint8_t is_pause;
