@@ -64,7 +64,11 @@ void Main(void)
 
 			case 'C': // 모든 STEP 완료 / 작업 정상 종료
 				Fail_LED_Off();
-				Step_LED_Off(led_step);
+				if (led_step != LED_STEP0)
+				{
+					Step_LED_Off(led_step);
+				}
+				Macro_Clear_Area(GPIOC->ODR, 0x1ff, 0);
 				led_step = LED_STEP0;
 				btn_state = BTN_RELEASED;
 				is_pause = 0;
@@ -74,7 +78,11 @@ void Main(void)
 
 			case 'R': // 불량 등록 / 리셋
 				Fail_LED_Off();
-				Step_LED_Off(led_step);
+				if (led_step != LED_STEP0)
+				{
+					Step_LED_Off(led_step);
+				}
+				Macro_Clear_Area(GPIOC->ODR, 0x1ff, 0);
 				led_step = LED_STEP0;
 				btn_state = BTN_RELEASED;
 				is_pause = 0;
@@ -100,6 +108,43 @@ void Main(void)
 					Btn_ISR_Enable(1, 1, 1);
 					Buzzer_Play(SOUND_RESUME);
 				}
+				break;
+
+			case 'E': // Qt 프로그램 종료 / 로그아웃 (전체 종료 및 대기 상태)
+				Fail_LED_Off();
+				if (led_step != LED_STEP0)
+				{
+					Step_LED_Off(led_step);
+				}
+				Macro_Clear_Area(GPIOC->ODR, 0x3ff, 0); // STEP 1~9 및 FAIL LED 완전 소등
+				led_step = LED_STEP0;
+				btn_state = BTN_RELEASED;
+				is_pause = 0;
+				Btn_ISR_Enable(0, 0, 0); // 모든 버튼 인터럽트 비활성화
+				Buzzer_Stop();           // 부저 정지
+				break;
+
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9': // 서버에서 복원된 작업 상태 반영 (해당 STEP LED 점등 및 활성화)
+				Fail_LED_Off();
+				Buzzer_Stop();
+				if (led_step != LED_STEP0)
+				{
+					Step_LED_Off(led_step);
+				}
+				Macro_Clear_Area(GPIOC->ODR, 0x1ff, 0);
+				led_step = (led_step_t)(Uart_data[0] - '0');
+				is_pause = 0;
+				btn_state = BTN_RELEASED;
+				Step_LED_On(led_step);
+				Btn_ISR_Enable(1, 1, 1);
 				break;
 
 			default:
@@ -185,7 +230,11 @@ void Main(void)
 			for (volatile int d = 0; d < 200000; d++);
 
 			Uart2_Send_String(Uart_Tx_Dataset[3]);
-			Step_LED_Off(led_step);
+			if (led_step != LED_STEP0)
+			{
+				Step_LED_Off(led_step);
+			}
+			Macro_Clear_Area(GPIOC->ODR, 0x1ff, 0);
 			led_step = LED_STEP0;
 			btn_state = BTN_RELEASED;
 			is_pause = 0;

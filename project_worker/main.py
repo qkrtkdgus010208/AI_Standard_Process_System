@@ -57,6 +57,15 @@ def main() -> int:
     application = QApplication(sys.argv)
     application.setApplicationName("Factory Worker PC")
     apply_theme(application)
+
+    import signal
+    from PyQt5.QtCore import QTimer
+    signal.signal(signal.SIGINT, lambda *_: application.quit())
+    signal.signal(signal.SIGTERM, lambda *_: application.quit())
+    sig_timer = QTimer()
+    sig_timer.start(500)
+    sig_timer.timeout.connect(lambda: None)
+
     try:
         worker_application = WorkerApplication()
         worker_application.start()

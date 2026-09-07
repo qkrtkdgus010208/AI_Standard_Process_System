@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
@@ -86,6 +86,9 @@ class WorkerWindow(QMainWindow):
         self.server_monitor_timer = QTimer(self)
         self.server_monitor_timer.timeout.connect(self._auto_check_server)
 
+        self._saved_work_restored = False
+        self._stm32_exit_sent = False
+
         self._create_ui()
         self._connect_signals()
         # 시작과 동시에 제품 목록 조회 (QTimer로 UI가 먼저 그려진 뒤 실행)
@@ -165,7 +168,7 @@ class WorkerWindow(QMainWindow):
         )
         logout_button = QPushButton("로그아웃")
         logout_button.setFixedWidth(86)
-        logout_button.clicked.connect(self.logout_requested.emit)
+        logout_button.clicked.connect(self.on_logout_clicked)
         top_layout.addWidget(logo)
         top_layout.addWidget(app_name)
         top_layout.addStretch()
@@ -429,10 +432,13 @@ class WorkerWindow(QMainWindow):
         self.product_name_combo.blockSignals(False)
 
         # 로그인 후 최초 1회만 이전 작업 복원 시도
-        if not self._saved_work_restored and self._try_restore_previous_work():
+        if not self._saved_work_restored:
             self._saved_work_restored = True
-            self.add_log("info" if success else "warning", message)
-            return
+            if self._try_restore_previous_work():
+                self.add_log("info" if success else "warning", message)
+                return
+            else:
+                self._ensure_stm32_standby()
 
         if self.products:
             self._on_product_changed(self.product_name_combo.currentIndex())
@@ -498,6 +504,10 @@ class WorkerWindow(QMainWindow):
             f"서버 이전 작업 복원 완료: {target_product.product_name} "
             f"(STEP {current_step}/{total_steps}) - 작업을 계속 진행합니다.",
         )
+
+        # 서버에서 복원된 작업 상황(STEP, 일시정지 상태)을 STM32로 전송하여 하드웨어 동기화
+        self.send_work_status_to_stm32(current_step, saved_state.get("state", "running"))
+
         QMessageBox.information(
             self,
             "이전 작업 복원",
@@ -642,6 +652,64 @@ class WorkerWindow(QMainWindow):
             self.add_log("error", "[UART 송신] R → STM32 수동 불량 등록 전달 (불량처리 부저)")
         else:
             self.add_log("warning", "[UART 송신 실패] R (시리얼 포트 미연결)")
+
+    def on_logout_clicked(self) -> None:
+        """로그아웃 버튼 클릭 시 STM32에 프로그램 종료('E') 명령을 전송하고 로그아웃합니다."""
+        self._send_exit_to_stm32()
+        self.logout_requested.emit()
+
+    def _send_exit_to_stm32(self) -> None:
+        """STM32에 프로그램 종료 / 대기 상태 전환 명령('E')을 전송합니다."""
+        if getattr(self, "_stm32_exit_sent", False):
+            return
+        self._stm32_exit_sent = True
+        try:
+            if self.uart_thread.send_message("E"):
+                self.add_log("info", "[UART 송신] E → STM32 프로그램 종료/대기 상태 전환")
+            QThread.msleep(50)
+        except Exception:
+            pass
+
+    def send_work_status_to_stm32(self, current_step: int, state: str) -> bool:
+        """서버에서 복원된 작업 상태(STEP, 일시정지)를 STM32로 전송하여 하드웨어를 동기화합니다."""
+        if not (1 <= current_step <= 9):
+            return False
+
+        # UART 스레드가 포트에 정상 연결될 때까지 대기 (최대 1.5초)
+        for _ in range(15):
+            if self.uart_thread.is_connected():
+                break
+            QThread.msleep(100)
+
+        # 1. 해당 STEP으로 복원 (STEP LED 점등, 버튼 활성화)
+        step_char = str(current_step)
+        if self.uart_thread.send_message(step_char):
+            self.add_log(
+                "info",
+                f"[UART 송신] {step_char} → STM32 이전 작업 복원 (STEP {current_step} LED 점등 및 버튼 활성화)",
+            )
+        else:
+            self.add_log("warning", f"[UART 송신 실패] {step_char} (시리얼 포트 미연결)")
+            return False
+
+        # 2. 일시정지 상태인 경우 일시정지 명령('U') 추가 전송
+        if state == "paused":
+            QThread.msleep(100)
+            if self.uart_thread.send_message("U"):
+                self.add_log("warning", "[UART 송신] U → STM32 복원 작업 일시정지 반영 (일시정지 부저)")
+            else:
+                self.add_log("warning", "[UART 송신 실패] U (시리얼 포트 미연결)")
+
+        return True
+
+    def _ensure_stm32_standby(self) -> None:
+        """복원할 이전 작업이 없는 경우 STM32를 안전한 대기 상태('E')로 설정합니다."""
+        for _ in range(10):
+            if self.uart_thread.is_connected():
+                break
+            QThread.msleep(100)
+        if self.uart_thread.send_message("E"):
+            self.add_log("info", "[UART 송신] E → STM32 초기 대기 상태 설정 (LED 소등 및 버튼 비활성화)")
 
     # ── AI 판정 ──────────────────────────────────────────────────────────────
 
@@ -882,7 +950,8 @@ class WorkerWindow(QMainWindow):
         self.clock_label.setText(datetime.now().strftime("%Y-%m-%d  %H:%M:%S"))
 
     def closeEvent(self, event) -> None:
-        """창 종료 시 모든 Device Thread를 안전하게 정리합니다."""
+        """창 종료 시 STM32에 프로그램 종료 명령 전송 및 모든 Device Thread를 안전하게 정리합니다."""
+        self._send_exit_to_stm32()
         self.clock_timer.stop()
         self.server_monitor_timer.stop()
         if self.server_check_thread is not None and self.server_check_thread.isRunning():
