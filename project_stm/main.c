@@ -29,7 +29,7 @@ void Main(void)
 	uint8_t fail_task_cnt = 0;
 	uint8_t pass_stage = 0;
 	uint8_t pass_task_cnt = 0;
-	static const char *Uart_Tx_Dataset[] = {"Check", "Pause", "Restart", "Reset"};
+	static const char *Uart_Tx_Dataset[] = {"Check\n", "Pause\n", "Resume\n", "Reset\n"};
 	led_step_t led_step = LED_STEP0;
 
 
@@ -132,7 +132,7 @@ void Main(void)
 			btn_state = BTN_RELEASED;
 			pass_stage = 0;
 			pass_task_cnt = 0;
-			fail_stage = 0;
+			fail_in = 0;
 			fail_task_cnt = 0;
 			break;
 		}
