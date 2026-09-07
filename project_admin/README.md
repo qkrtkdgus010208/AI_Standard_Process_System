@@ -21,7 +21,8 @@ project_admin/
 ├── ui_helpers.py               # [NEW] 공통 UI 헬퍼 (테이블 생성/바인딩, 메트릭 카드, 역할 매핑)
 ├── employee_detail_dialog.py   # 직원 상세 이력 조회 (출퇴근, 작업회차, 일시정지, 불량이력, 메시지 전송)
 ├── product_detail_dialog.py    # 제품별 STEP 품질 통계 및 기준점(Baseline) 관리
-├── product_dialog.py           # 제품 추가/수정 다이얼로그
+├── product_dialog.py           # 제품 및 STEP별 기준 이미지 추가/수정 다이얼로그
+├── step_guide_storage.py       # STEP 기준 이미지 변환·저장·경로 검증
 ├── step_history_dialog.py      # 특정 작업 회차의 STEP별 실제 작업시간 및 통계 조회
 ├── worker_account_dialog.py    # 작업자 계정 발급 및 계정 말소 다이얼로그
 ├── theme.py                    # 시스템 공통 QSS 테마 및 컬러 팔레트
@@ -37,7 +38,7 @@ project_admin/
 - **상태 보존 및 복원 (Work State Persistence)**: 작업자가 비정상 종료되거나 재로그인할 때 이전에 작업하던 제품과 STEP, 일시정지 상태를 그대로 복원하여 작업 연속성 보장.
 - **원자적 상태 전이 기록 (`WorkerStateRecorder`)**: 작업자의 상태 이벤트 수신 시 제품 회차(`product_runs`), 단계별 소요시간(`step_runs`), 일시정지 이력(`pause_logs`), 판정 로그(`judgement_logs`), 불량 이력(`defect_logs`)을 트랜잭션으로 일관성 있게 갱신.
 - **품질 지표 집계 및 기준점 리셋**: 제품별 STEP 단위 PASS/FAIL률 분석 및 기준점 설정(이전 이력은 유지하되 통계 집계 기준 분리).
-- **작업자 계정 및 제품 관리**: 작업자 신규 등록/말소(비밀번호 PBKDF2 해싱), 제품별 전체 STEP 관리.
+- **작업자 계정 및 제품 관리**: 작업자 신규 등록/말소(비밀번호 PBKDF2 해싱), 제품별 전체 STEP과 STEP별 정상 기준 이미지 관리.
 - **양방향 긴급 호출/메시지**: 관리자가 특정 작업자에게 텍스트 메시지 및 호출 알림 전송.
 
 ## 3. 시스템 구성
@@ -51,7 +52,7 @@ flowchart LR
     A -->|MESSAGE/TCP :5000| J
 ```
 
-- **작업자 → 관제 서버**: `Monitoring PC IP:5001` (인증, 제품목록 요청, 상태보고)
+- **작업자 → 관제 서버**: `Monitoring PC IP:5001` (인증, 제품목록·현재 STEP 기준 이미지 요청, 상태보고)
 - **관제 서버 → 작업자**: `Jetson IP:5000` (관리자 메시지 및 호출 전송)
 - 동적 IP 바인딩: 로그인 시 접속한 IP를 `WorkerEndpointRegistry`에 등록하여 별도의 고정 IP 설정 없이 통신.
 

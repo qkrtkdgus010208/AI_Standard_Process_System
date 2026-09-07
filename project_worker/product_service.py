@@ -4,6 +4,8 @@ Monitoring PC SQLite DB의 products 테이블에서 제품 정보를 비동기�
 다양한 응답 형식을 ProductInfo 표준 객체로 변환합니다.
 """
 
+import base64
+
 from dataclasses import dataclass
 from typing import Optional, Union
 
@@ -96,6 +98,28 @@ def fetch_products_from_monitoring_pc(token: str = "") -> list[ProductInfo]:
     return []
 
 
+def fetch_step_guide_from_monitoring_pc(token: str, product_id: str,
+                                        step_no: int) -> Optional[bytes]:
+    """현재 제품·STEP의 기준 이미지 한 장을 조회합니다."""
+    response = send_json_request({
+        "type": "step_guide", "token": token,
+        "product_id": product_id, "step_no": int(step_no),
+    })
+    if not isinstance(response, dict) or response.get("ok") is False:
+        message = response.get("message", "요청 실패") if isinstance(response, dict) else "응답 오류"
+        raise ConnectionError(message)
+    guide = response.get("guide")
+    if not guide:
+        return None
+    encoded = str(guide.get("image_base64") or "")
+    if not encoded:
+        return None
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError) as error:
+        raise ValueError("기준 이미지 데이터가 손상되었습니다.") from error
+
+
 class ProductFetchThread(QThread):
     """모니터링 PC의 products 테이블에서 제품 목록을 비동기 조회하는 Thread입니다."""
 
@@ -127,3 +151,31 @@ class ProductFetchThread(QThread):
                 )
         except Exception as error:
             self.products_fetched.emit([], False, f"모니터링 PC 제품 조회 실패: {error}")
+
+
+class StepGuideFetchThread(QThread):
+    """STEP 기준 이미지를 UI를 막지 않고 조회합니다."""
+
+    guide_fetched = pyqtSignal(str, int, object, bool, str)
+
+    def __init__(self, token: str, product_id: str, step_no: int, parent=None):
+        super().__init__(parent)
+        self.token = token
+        self.product_id = product_id
+        self.step_no = int(step_no)
+        self.finished.connect(self.deleteLater)
+
+    def run(self) -> None:
+        try:
+            image_data = fetch_step_guide_from_monitoring_pc(
+                self.token, self.product_id, self.step_no
+            )
+            message = "기준 이미지 없음" if image_data is None else "기준 이미지 로드 완료"
+            self.guide_fetched.emit(
+                self.product_id, self.step_no, image_data, True, message
+            )
+        except Exception as error:
+            self.guide_fetched.emit(
+                self.product_id, self.step_no, None, False,
+                f"STEP 기준 이미지 조회 실패: {error}",
+            )

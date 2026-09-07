@@ -15,7 +15,8 @@
 | `admin_window.py` | 직원 현황, 제품 관리, 작업자 계정 등록 |
 | `employee_detail_dialog.py` | 직원별 로그인/제품/불량/일시정지 이력, STEP 상세 모달 연결, 관리자 메시지 전송 |
 | `step_history_dialog.py` | 선택한 제품 작업 회차의 STEP 작업시간 모달 |
-| `product_dialog.py` | 제품번호·제품명·총 STEP 입력과 검증 |
+| `product_dialog.py` | 제품번호·제품명·총 STEP 및 STEP별 기준 이미지 입력과 검증 |
+| `step_guide_storage.py` | 기준 이미지 경로 검증, 1280×720 JPEG 변환·저장·정리 |
 | `product_detail_dialog.py` | 제품별 STEP 검사 FAIL·불량 버튼 누적 상세표 |
 | `worker_account_dialog.py` | 작업자 계정 등록·말소 모달과 입력 검증 |
 | `monitoring_gateway.py` | 작업자 인증·Token, 제품 목록, 상태, 로그아웃 JSON/TCP API와 동시 Client 처리 |
@@ -23,6 +24,7 @@
 | `theme.py` | 전역 PyQt 테마와 카드 그림자 |
 | `sample_data.py`, `mock_tcp_server.py` | 샘플 DB 생성, 포트 5000 수신 확인용 개발 도구 |
 | `test_state_persistence.py` | 상태 저장·집계·복원·동적 IP·제품 검증·KST 마이그레이션 회귀 테스트 |
+| `worker_state_recorder.py` | 작업자 상태 검증·중복 판정·제품/STEP/판정/정지/불량 이력의 트랜잭션 저장 |
 
 기능 변경 시 UI 파일과 함께 위 표의 데이터/통신 파일을 확인한다. 특히 상태 처리나
 DB 스키마는 `DatabaseManager.record_worker_state()`와 회귀 테스트를 함께 본다.
@@ -38,7 +40,8 @@ Admin/EmployeeDetail → TcpClient → 작업자 PC:5000
 - 관리자→작업자는 UTF-8 한 줄
   `MESSAGE|<employee_id>|<UTF-8 URL-safe Base64>`를 전송한다.
 - 작업자→관리자는 UTF-8 JSON 한 줄 요청/응답이며 요청 종류는 `auth`,
-  `products`/`get_products`, `state`, `logout`이다.
+  `products`/`get_products`, `step_guide`, `state`, `logout`이다. `step_guide`는 현재
+  제품·STEP 이미지 한 장을 Base64로 반환하며 작업자는 최대 5MB 응답을 수신한다.
 - `auth` 성공 응답은 미완료 제품 작업이 있으면 제품·현재 STEP·상태·최근 판정을
   `work_state`에 담고, 이어갈 작업이 없으면 `work_state: null`을 반환한다.
 - Gateway는 로그인 TCP 연결의 실제 IP를 직원·Token과 메모리에서 연결한다. 관리자 메시지는
@@ -52,6 +55,8 @@ Admin/EmployeeDetail → TcpClient → 작업자 PC:5000
   완료된 기록은 9시간 기준으로 정상 근무 또는 시간 미달을 표시한다.
 - 다음 STEP은 이전 STEP과 열린 정지를 완료한다. `paused`는 정지를 시작하고 다른 상태는
   정지를 종료한다. `defect` 결과는 불량 완료, `complete` 상태는 정상 완료로 저장한다.
+- STEP 기준 이미지는 `step_guide_images` 폴더에 저장하고 경로·해시·크기는
+  `products → product_step_guides`에 저장한다.
 - 주요 DB 관계는 `employees → work_sessions/product_runs`,
   `products → product_runs`, `product_runs → step_runs → pause_logs`이며
   불량은 `step_runs → defect_logs`, 원본 상태는 `worker_state_events`에 저장한다.
@@ -76,3 +81,58 @@ python main.py
 
 DB·상태 저장 변경에는 회귀 테스트를 실행·추가하고, UI 변경은 대상 화면을 실행 확인한다.
 모듈 책임, 실행 흐름, DB 스키마 또는 TCP 계약이 바뀌면 이 파일도 갱신한다.
+
+## Agent delegation
+
+The main agent owns:
+- interpretation of the user's request and overall task scope
+- root-cause and architecture decisions
+- database schema and major API/TCP contract decisions
+- authentication, authorization, and security decisions
+- important business-rule decisions
+- new core dependency decisions
+- final integration review and completion judgment
+
+Use `luna_worker` for clearly bounded work such as:
+- targeted repository investigation
+- symbol, reference, import, API, type, and call-path searches
+- tracing existing implementation flows
+- clearly scoped implementation and localized bug fixes
+- repetitive multi-file edits
+- tests and targeted validation
+
+Use the file/function map and contracts in this document to narrow the initial search scope.
+
+Search repository-wide when necessary, but do not read every matching file.
+Search first, classify results, narrow candidates, then inspect only relevant code.
+
+If the actual code conflicts with this document, treat the code as the current
+source of truth and report the discrepancy.
+
+`luna_worker` must not independently:
+- redesign project architecture
+- change major database schemas
+- change authentication or security policy
+- change major TCP/API contracts
+- invent important business rules
+- add a new core dependency
+- spawn additional subagents
+
+When such a decision is necessary, return it to the main agent.
+
+The main agent should not repeat broad investigation already completed by
+`luna_worker` from the beginning.
+
+Main-agent verification should focus on:
+- changed files
+- core execution paths
+- DB/API/TCP contract consistency
+- authentication and security boundaries
+- validation results
+- uncertainties reported by the worker
+
+Prefer one `luna_worker`.
+Use a second worker only for a clearly independent task.
+Workers must not edit the same files concurrently.
+
+The main agent makes the final completion judgment.

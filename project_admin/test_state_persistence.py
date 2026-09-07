@@ -1,16 +1,24 @@
+import base64
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QImage
+
 from database_manager import DatabaseManager
 from monitoring_gateway import MonitoringGatewayThread
 from tcp_client import TcpClient, WorkerEndpointRegistry
+import config
+from step_guide_storage import resolve_guide_path, save_guide_image
 
 
 class WorkerStatePersistenceTest(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
+        self._original_guide_dir = config.STEP_GUIDE_IMAGE_DIR
+        config.STEP_GUIDE_IMAGE_DIR = Path(self.temporary_directory.name) / "step_guides"
         self.database = DatabaseManager(
             Path(self.temporary_directory.name) / "test_factory.db"
         )
@@ -19,6 +27,7 @@ class WorkerStatePersistenceTest(unittest.TestCase):
         self.database.create_product("P001", "스마트 액추에이터 A", 5)
 
     def tearDown(self):
+        config.STEP_GUIDE_IMAGE_DIR = self._original_guide_dir
         self.temporary_directory.cleanup()
 
     def send_state(self, state, current_step, last_result="waiting", event=""):
@@ -293,6 +302,71 @@ class WorkerStatePersistenceTest(unittest.TestCase):
             "state": "paused",
             "last_result": "fail",
         })
+
+    def test_step_guide_metadata_is_replaced_and_trimmed_with_product_steps(self):
+        self.database.replace_product_step_guides("P001", [
+            {
+                "step_no": 1, "image_path": "p001/step_001.jpg",
+                "mime_type": "image/jpeg", "byte_size": 3, "sha256": "abc",
+            },
+            {
+                "step_no": 5, "image_path": "p001/step_005.jpg",
+                "mime_type": "image/jpeg", "byte_size": 3, "sha256": "def",
+            },
+        ])
+        self.assertEqual(
+            [row["step_no"] for row in self.database.get_product_step_guides("P001")],
+            [1, 5],
+        )
+
+        self.database.update_product("P001", "스마트 액추에이터 A", 3)
+
+        guides = self.database.get_product_step_guides("P001")
+        self.assertEqual([row["step_no"] for row in guides], [1])
+
+    def test_step_guide_image_is_normalized_into_managed_storage(self):
+        source = Path(self.temporary_directory.name) / "source.png"
+        image = QImage(1600, 900, QImage.Format_RGB32)
+        image.fill(Qt.red)
+        self.assertTrue(image.save(str(source), "PNG"))
+
+        guide = save_guide_image("P001", 1, str(source))
+        stored_path = resolve_guide_path(guide["image_path"])
+        stored = QImage(str(stored_path))
+
+        self.assertTrue(stored_path.is_file())
+        self.assertEqual(guide["mime_type"], "image/jpeg")
+        self.assertLessEqual(stored.width(), 1280)
+        self.assertLessEqual(stored.height(), 720)
+        self.assertEqual(guide["byte_size"], stored_path.stat().st_size)
+
+    def test_gateway_returns_current_step_guide_image(self):
+        image_bytes = b"test-image-bytes"
+        image_path = config.STEP_GUIDE_IMAGE_DIR / "p001" / "step_002.jpg"
+        image_path.parent.mkdir(parents=True)
+        image_path.write_bytes(image_bytes)
+        self.database.replace_product_step_guides("P001", [{
+            "step_no": 2,
+            "image_path": "p001/step_002.jpg",
+            "mime_type": "image/jpeg",
+            "byte_size": len(image_bytes),
+            "sha256": "guide-hash",
+        }])
+        gateway = MonitoringGatewayThread(self.database, host="127.0.0.1", port=0)
+        login = gateway._process_request({
+            "type": "auth", "employee_id": "1001", "password": "worker1234",
+        })
+
+        response = gateway._process_request({
+            "type": "step_guide", "token": login["token"],
+            "product_id": "P001", "step_no": 2,
+        })
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["guide"]["step_no"], 2)
+        self.assertEqual(
+            base64.b64decode(response["guide"]["image_base64"]), image_bytes
+        )
 
     def test_completed_work_is_not_returned_on_worker_login(self):
         self.send_state("running", 5)

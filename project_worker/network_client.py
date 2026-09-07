@@ -20,13 +20,16 @@ def send_json_request(payload: dict) -> dict:
     ) as client:
         client.sendall((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
         buffer = b""
-        while b"\n" not in buffer and len(buffer) < 65536:
+        max_response_bytes = getattr(config, "MONITORING_MAX_RESPONSE_BYTES", 65536)
+        while b"\n" not in buffer and len(buffer) < max_response_bytes:
             chunk = client.recv(4096)
             if not chunk:
                 break
             buffer += chunk
     if not buffer:
         raise ConnectionError("Monitoring PC에서 응답이 없습니다.")
+    if b"\n" not in buffer:
+        raise ConnectionError("Monitoring PC 응답이 허용된 크기를 초과했습니다.")
     return json.loads(buffer.decode("utf-8").splitlines()[0])
 
 

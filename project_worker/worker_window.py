@@ -15,7 +15,7 @@ import config
 from auth_manager import WorkerSession
 from ai_judge import AiInferenceThread, JudgeResult
 from camera_manager import CameraThread
-from product_service import ProductInfo, ProductFetchThread
+from product_service import ProductInfo, ProductFetchThread, StepGuideFetchThread
 from protocol import decode_message_text, parse_message
 from server_monitor import ServerMonitor
 from state_reporter import MonitoringEventThread
@@ -75,6 +75,9 @@ class WorkerWindow(QMainWindow):
         self.products: list[ProductInfo] = []
         self._current_product: Optional[ProductInfo] = None
         self.product_fetch_thread: Optional[ProductFetchThread] = None
+        self._guide_fetch_thread: Optional[StepGuideFetchThread] = None
+        self._requested_guide_key = None
+        self._displayed_guide_key = None
         self.message_popup: Optional[QMessageBox] = None
 
         # ── 서비스 스레드 ──
@@ -242,15 +245,36 @@ class WorkerWindow(QMainWindow):
 
         # ── 카메라 카드 ──
         camera_card, camera_layout = self._make_card(
-            "카메라", "USB Camera와 Jetson CSI Camera Backend를 지원합니다."
+            "카메라 · STEP 기준 이미지", "실제 조립 상태와 관리자가 등록한 정상 예시를 비교하세요."
         )
+        image_row = QHBoxLayout()
+        image_row.setSpacing(10)
+        camera_panel = QVBoxLayout()
+        camera_title = QLabel("현재 카메라")
+        camera_title.setObjectName("smallLabel")
         self.camera_view = QLabel("카메라 연결 대기 중")
         self.camera_view.setAlignment(Qt.AlignCenter)
-        self.camera_view.setMinimumSize(620, 320)
+        self.camera_view.setMinimumSize(360, 300)
         self.camera_view.setStyleSheet(
             "color:#C7D2DC; background:#263746; border:1px solid #BFC9D3; border-radius:7px;"
         )
-        camera_layout.addWidget(self.camera_view, 1)
+        camera_panel.addWidget(camera_title)
+        camera_panel.addWidget(self.camera_view, 1)
+
+        guide_panel = QVBoxLayout()
+        self.guide_title_label = QLabel("STEP 기준 이미지")
+        self.guide_title_label.setObjectName("smallLabel")
+        self.step_guide_view = QLabel("제품을 선택하면\n기준 이미지를 불러옵니다.")
+        self.step_guide_view.setAlignment(Qt.AlignCenter)
+        self.step_guide_view.setMinimumSize(300, 300)
+        self.step_guide_view.setStyleSheet(
+            "color:#6F7B89; background:#F4F6F8; border:1px solid #DDE3EA; border-radius:7px;"
+        )
+        guide_panel.addWidget(self.guide_title_label)
+        guide_panel.addWidget(self.step_guide_view, 1)
+        image_row.addLayout(camera_panel, 1)
+        image_row.addLayout(guide_panel, 1)
+        camera_layout.addLayout(image_row, 1)
 
         # ── 작업 상태 카드 ──
         progress_card, progress_layout = self._make_card("현재 작업 상태")
@@ -421,6 +445,7 @@ class WorkerWindow(QMainWindow):
         """모니터링 PC의 products 테이블로부터 제품 목록을 비동기 조회합니다."""
         if self.product_fetch_thread is not None and self.product_fetch_thread.isRunning():
             return
+        self._displayed_guide_key = None
         self.product_fetch_thread = ProductFetchThread(token=self.session.token, parent=self)
         self.product_fetch_thread.products_fetched.connect(self._on_products_fetched)
         self.product_fetch_thread.finished.connect(self._clear_product_fetch_thread)
@@ -538,6 +563,7 @@ class WorkerWindow(QMainWindow):
         self.product_id_display.setText(product.product_id)
         self.total_steps_display.setText(f"{product.total_steps} 단계")
         self._apply_work_setup()
+        self._request_step_guide(product.product_id, 1)
 
     def _apply_work_setup(self) -> None:
         """선택된 제품 정보를 Controller에 적용합니다."""
@@ -548,6 +574,62 @@ class WorkerWindow(QMainWindow):
             self._current_product.product_id, self._current_product.product_name,
             self._current_product.total_steps,
         )
+
+    def _request_step_guide(self, product_id: str, step_no: int) -> None:
+        """요청된 제품·STEP 기준 이미지를 비동기로 가져옵니다."""
+        if self._is_terminating or not product_id or int(step_no) < 1:
+            return
+        key = (str(product_id), int(step_no))
+        self._requested_guide_key = key
+        if self._displayed_guide_key == key:
+            return
+        if self._guide_fetch_thread is not None and self._guide_fetch_thread.isRunning():
+            return
+        self.guide_title_label.setText(f"STEP {step_no} 기준 이미지")
+        self.step_guide_view.clear()
+        self.step_guide_view.setText("기준 이미지 불러오는 중…")
+        thread = StepGuideFetchThread(
+            self.session.token, key[0], key[1], parent=self
+        )
+        self._guide_fetch_thread = thread
+        thread.guide_fetched.connect(self._on_step_guide_fetched)
+        thread.finished.connect(self._on_step_guide_fetch_finished)
+        thread.start()
+
+    def _on_step_guide_fetched(self, product_id: str, step_no: int,
+                               image_data, success: bool, message: str) -> None:
+        key = (product_id, int(step_no))
+        if key != self._requested_guide_key:
+            return
+        self._displayed_guide_key = key
+        self.guide_title_label.setText(f"STEP {step_no} 기준 이미지")
+        if not success:
+            self.step_guide_view.clear()
+            self.step_guide_view.setText("기준 이미지를\n불러오지 못했습니다.")
+            self.add_log("warning", message)
+            return
+        if image_data is None:
+            self.step_guide_view.clear()
+            self.step_guide_view.setText("등록된 기준 이미지가\n없습니다.")
+            return
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(image_data):
+            self.step_guide_view.clear()
+            self.step_guide_view.setText("기준 이미지가\n손상되었습니다.")
+            self.add_log("warning", "STEP 기준 이미지 데이터를 표시할 수 없습니다.")
+            return
+        self.step_guide_view.setPixmap(
+            pixmap.scaled(
+                self.step_guide_view.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+        )
+
+    def _on_step_guide_fetch_finished(self) -> None:
+        self._guide_fetch_thread = None
+        if (not self._is_terminating
+                and self._requested_guide_key != self._displayed_guide_key):
+            product_id, step_no = self._requested_guide_key
+            self._request_step_guide(product_id, step_no)
 
     # ── 작업 상태 UI 갱신 ────────────────────────────────────────────────────
 
@@ -562,6 +644,10 @@ class WorkerWindow(QMainWindow):
         self.current_step_label.setText(
             f"STEP {state['current_step']} / {state['total_steps']}"
         )
+        if int(state.get("current_step") or 0) >= 1:
+            self._request_step_guide(
+                str(state.get("product_id") or ""), int(state["current_step"])
+            )
         self.work_progress.setRange(0, state["total_steps"])
         if state_name == "complete":
             completed = state["total_steps"]
@@ -905,6 +991,8 @@ class WorkerWindow(QMainWindow):
         self.server_monitor.stop()
         if self.product_fetch_thread is not None and self.product_fetch_thread.isRunning():
             self.product_fetch_thread.wait(1000)
+        if self._guide_fetch_thread is not None and self._guide_fetch_thread.isRunning():
+            self._guide_fetch_thread.wait(3500)
         self.monitoring_event_thread.logout_and_stop()
         for thread in (self.camera_thread, self.ai_thread, self.uart_thread, self.tcp_thread):
             thread.stop()

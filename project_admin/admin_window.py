@@ -14,6 +14,9 @@ from database_manager import DatabaseManager
 from employee_detail_dialog import EmployeeDetailDialog
 from product_dialog import ProductDialog
 from product_detail_dialog import ProductDetailDialog
+from step_guide_storage import (
+    delete_unused_guide_files, resolve_guide_path, save_guide_image,
+)
 from tcp_client import TcpClient
 from ui_helpers import ROLE_DISPLAY_NAMES
 from worker_account_dialog import (
@@ -479,12 +482,19 @@ class AdminWindow(QMainWindow):
         if dialog.exec_() != ProductDialog.Accepted:
             return
         data = dialog.get_product_data()
+        step_images = data.pop("step_images")
         try:
             self.database_manager.create_product(**data)
+            self._save_product_step_images(data["product_id"], step_images)
             self.search_products()
         except sqlite3.IntegrityError:
             QMessageBox.warning(self, "등록 실패", "이미 사용 중인 제품번호입니다.")
         except Exception as error:
+            try:
+                self.database_manager.delete_product(data["product_id"])
+                delete_unused_guide_files(data["product_id"], set())
+            except Exception:
+                pass
             QMessageBox.warning(self, "등록 실패", str(error))
 
     def open_selected_product(self, _index=None) -> None:
@@ -512,15 +522,33 @@ class AdminWindow(QMainWindow):
         if product is None:
             QMessageBox.warning(self, "조회 실패", "제품을 찾을 수 없습니다.")
             return
+        guides = self.database_manager.get_product_step_guides(product_id)
+        product["step_images"] = {
+            int(guide["step_no"]): str(resolve_guide_path(guide["image_path"]))
+            for guide in guides
+            if resolve_guide_path(guide["image_path"]).is_file()
+        }
         dialog = ProductDialog(product, self)
         if dialog.exec_() != ProductDialog.Accepted:
             return
         data = dialog.get_product_data()
+        step_images = data.pop("step_images")
         try:
             self.database_manager.update_product(**data)
+            self._save_product_step_images(product_id, step_images)
             self.search_products()
         except Exception as error:
             QMessageBox.warning(self, "수정 실패", str(error))
+
+    def _save_product_step_images(self, product_id: str,
+                                  step_images: dict[int, str]) -> None:
+        """선택된 STEP 이미지를 관리 폴더에 저장하고 DB 메타데이터를 갱신합니다."""
+        guides = [
+            save_guide_image(product_id, step_no, source_path)
+            for step_no, source_path in sorted(step_images.items())
+        ]
+        self.database_manager.replace_product_step_guides(product_id, guides)
+        delete_unused_guide_files(product_id, {guide["step_no"] for guide in guides})
 
     def delete_selected_product(self) -> None:
         """선택한 제품을 확인 후 삭제합니다."""
@@ -538,6 +566,7 @@ class AdminWindow(QMainWindow):
             return
         try:
             self.database_manager.delete_product(product_id)
+            delete_unused_guide_files(product_id, set())
             self.search_products()
         except sqlite3.IntegrityError:
             QMessageBox.warning(self, "삭제 실패", "작업 이력이 있는 제품은 삭제할 수 없습니다.")

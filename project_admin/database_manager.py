@@ -94,6 +94,18 @@ class DatabaseManager:
                     product_name TEXT NOT NULL,
                     total_steps INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS product_step_guides (
+                    product_id TEXT NOT NULL,
+                    step_no INTEGER NOT NULL,
+                    image_path TEXT NOT NULL,
+                    mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+                    byte_size INTEGER NOT NULL DEFAULT 0,
+                    sha256 TEXT NOT NULL DEFAULT '',
+                    updated_at DATETIME NOT NULL DEFAULT (datetime('now', '+9 hours')),
+                    PRIMARY KEY (product_id, step_no),
+                    FOREIGN KEY (product_id) REFERENCES products(product_id)
+                        ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS work_sessions (
                     session_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     employee_id TEXT,
@@ -658,6 +670,62 @@ class DatabaseManager:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_product_step_guides(self, product_id: str) -> list[dict]:
+        """제품의 STEP별 기준 이미지 메타데이터를 순서대로 조회합니다."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT product_id, step_no, image_path, mime_type,
+                          byte_size, sha256, updated_at
+                   FROM product_step_guides
+                   WHERE product_id = ? ORDER BY step_no""",
+                (product_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_product_step_guide(self, product_id: str, step_no: int) -> Optional[dict]:
+        """제품의 특정 STEP 기준 이미지 메타데이터를 조회합니다."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT product_id, step_no, image_path, mime_type,
+                          byte_size, sha256, updated_at
+                   FROM product_step_guides
+                   WHERE product_id = ? AND step_no = ?""",
+                (product_id, int(step_no)),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def replace_product_step_guides(self, product_id: str,
+                                    guides: list[dict]) -> None:
+        """제품의 STEP 기준 이미지 메타데이터를 한 트랜잭션으로 교체합니다."""
+        product = self.get_product(product_id)
+        if product is None:
+            raise ValueError("기준 이미지를 등록할 제품을 찾을 수 없습니다.")
+        total_steps = int(product["total_steps"])
+        normalized = []
+        seen_steps = set()
+        for guide in guides:
+            step_no = int(guide["step_no"])
+            if step_no < 1 or step_no > total_steps:
+                raise ValueError(f"STEP {step_no}은 제품의 STEP 범위를 벗어납니다.")
+            if step_no in seen_steps:
+                raise ValueError(f"STEP {step_no} 기준 이미지가 중복되었습니다.")
+            seen_steps.add(step_no)
+            normalized.append((
+                product_id, step_no, str(guide["image_path"]),
+                str(guide.get("mime_type") or "image/jpeg"),
+                int(guide.get("byte_size") or 0), str(guide.get("sha256") or ""),
+            ))
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM product_step_guides WHERE product_id = ?", (product_id,)
+            )
+            connection.executemany(
+                """INSERT INTO product_step_guides(
+                       product_id, step_no, image_path, mime_type, byte_size, sha256
+                   ) VALUES (?, ?, ?, ?, ?, ?)""",
+                normalized,
+            )
+
     def create_product(self, product_id: str, product_name: str,
                        total_steps: int) -> None:
         """관리자가 새 제품과 전체 STEP 수를 등록합니다."""
@@ -690,10 +758,17 @@ class DatabaseManager:
             )
             if cursor.rowcount == 0:
                 raise ValueError("수정할 제품을 찾을 수 없습니다.")
+            connection.execute(
+                "DELETE FROM product_step_guides WHERE product_id = ? AND step_no > ?",
+                (product_id, int(total_steps)),
+            )
 
     def delete_product(self, product_id: str) -> None:
         """작업 이력이 없는 제품을 삭제합니다."""
         with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM product_step_guides WHERE product_id = ?", (product_id,)
+            )
             connection.execute(
                 "DELETE FROM product_quality_baselines WHERE product_id = ?", (product_id,)
             )

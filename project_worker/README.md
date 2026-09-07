@@ -9,13 +9,13 @@ OOP 원칙(단일 책임 원칙, Facade/Controller 패턴)에 따라 명확히 �
 ```text
 project_worker/
 ├── main.py                # 프로그램 진입점 및 세션 기반 화면(로그인 ↔ 작업창) 전환
-├── worker_window.py       # 작업자 메인 GUI (카메라 영상, 상태 표시, 제어 버튼, 로그)
+├── worker_window.py       # 작업자 메인 GUI (카메라·STEP 기준 이미지, 상태 표시, 제어 버튼, 로그)
 ├── login_window.py        # 작업자 로그인 UI
 ├── work_state.py          # 공정 STEP/상태 머신 컨트롤러 (WorkStateController, WorkSnapshot)
 ├── stm_controller.py      # [NEW] STM32 UART 명령 전송 캡슐화 컨트롤러 (StmController)
 ├── server_monitor.py      # [NEW] 관제 PC 서버 연결 주기적 감시 모듈 (ServerMonitor)
 ├── network_client.py      # [NEW] 저수준 TCP JSON 통신 및 연결 헬스체크 (send_json_request, ServerCheckThread)
-├── product_service.py     # [NEW] 제품 목록 비동기 조회 및 변환 서비스 (ProductFetchThread, ProductInfo)
+├── product_service.py     # 제품 목록과 현재 STEP 기준 이미지 비동기 조회 서비스
 ├── state_reporter.py      # [NEW] 큐 기반 비동기 작업상태 이벤트 서버 전송 (MonitoringEventThread, parse_work_state_data)
 ├── auth_manager.py        # 작업자 인증 세션 관리 (WorkerSession, AuthResult, AuthRequestThread)
 ├── camera_manager.py      # USB/CSI/Mock 카메라 프레임 캡처 스레드 (CameraThread)
@@ -33,6 +33,7 @@ project_worker/
 
 - **공정 라이프사이클 관리**: 대기(idle) → 작업 진행(running) → 일시정지(paused) → 작업 완료(complete) / 불량 등록(defect).
 - **AI 비전 검사 연동**: 카메라 영상을 받아 실시간 추론(`AiInferenceThread`), PASS 시 다음 STEP 자동 진입, FAIL 시 불량 알람 및 재검사 대기.
+- **STEP 기준 이미지 비교**: 관리자가 등록한 정상 예시 이미지를 현재 카메라 옆에 표시하고 STEP 전환 시 자동 갱신.
 - **이전 작업 자동 복원**: 로그인 시 서버에 남아있는 미완료 작업(제품번호, 진행 STEP, 일시정지 상태)을 자동 복원하고 STM32 LED/상태를 즉시 동기화.
 - **서버 연결 감시**: 관제 서버와의 TCP 연결이 비정상 종료되면 경고 팝업 후 안전하게 프로그램 종료.
 - **STM32 하드웨어 연동**: 물리 버튼(Check, Pause/Resume, Reset) 및 1~9번 STEP LED, FAIL LED, 상태별 부저 음향 제어.

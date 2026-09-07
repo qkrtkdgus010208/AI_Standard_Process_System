@@ -1,5 +1,6 @@
 """WorkerPC 인증과 세션 기반 상태 메시지를 받는 Monitoring PC 서버입니다."""
 
+import base64
 import json
 import secrets
 import socket
@@ -11,6 +12,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 import config
 from database_manager import DatabaseManager
 from tcp_client import WorkerEndpointRegistry
+from step_guide_storage import resolve_guide_path
 
 
 WORKER_GATEWAY_HOST = config.WORKER_GATEWAY_HOST
@@ -103,6 +105,8 @@ class MonitoringGatewayThread(QThread):
 
         if request_type in ("products", "get_products"):
             return self._handle_products_request()
+        if request_type == "step_guide":
+            return self._handle_step_guide_request(request)
         if request_type == "state":
             return self._handle_state_request(request, employee)
         if request_type == "logout":
@@ -167,6 +171,41 @@ class MonitoringGatewayThread(QThread):
                 }
                 for product in products
             ],
+        }
+
+    def _handle_step_guide_request(self, request: dict) -> dict:
+        """현재 제품·STEP의 기준 이미지 한 장을 Base64로 반환합니다."""
+        product_id = str(request.get("product_id", "")).strip()
+        try:
+            step_no = int(request.get("step_no", 0))
+        except (TypeError, ValueError):
+            return {"ok": False, "message": "STEP 번호가 올바르지 않습니다."}
+        product = self.database_manager.get_product(product_id)
+        if product is None:
+            return {"ok": False, "message": "등록되지 않은 제품입니다."}
+        if step_no < 1 or step_no > int(product["total_steps"]):
+            return {"ok": False, "message": "제품의 STEP 범위를 벗어났습니다."}
+
+        guide = self.database_manager.get_product_step_guide(product_id, step_no)
+        if guide is None:
+            return {"ok": True, "guide": None}
+        try:
+            path = resolve_guide_path(guide["image_path"])
+            image_data = path.read_bytes()
+        except (OSError, ValueError) as error:
+            return {"ok": False, "message": f"기준 이미지를 읽을 수 없습니다: {error}"}
+        if len(image_data) > config.STEP_GUIDE_MAX_RESPONSE_BYTES:
+            return {"ok": False, "message": "기준 이미지 용량이 전송 제한을 초과합니다."}
+        return {
+            "ok": True,
+            "guide": {
+                "product_id": product_id,
+                "step_no": step_no,
+                "mime_type": guide["mime_type"],
+                "sha256": guide["sha256"],
+                "updated_at": guide["updated_at"],
+                "image_base64": base64.b64encode(image_data).decode("ascii"),
+            },
         }
 
     def _handle_state_request(self, request: dict, employee: dict) -> dict:

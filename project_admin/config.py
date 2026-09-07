@@ -8,6 +8,11 @@ BASE_DIR = Path(__file__).resolve().parent
 # SQLite 설정
 DATABASE_PATH = BASE_DIR / "factory.db"
 
+# 제품 STEP별 기준 이미지는 DB와 분리하여 이 폴더에 보관합니다.
+STEP_GUIDE_IMAGE_DIR = BASE_DIR / "step_guide_images"
+STEP_GUIDE_MAX_SOURCE_BYTES = 10 * 1024 * 1024
+STEP_GUIDE_MAX_RESPONSE_BYTES = 3 * 1024 * 1024
+
 # 로그인한 Jetson의 실제 IP는 Gateway가 동적으로 연결하며 수신 Port만 공통입니다.
 JETSON_SERVER_PORT = 5000
 JETSON_CONNECTION_TIMEOUT_SECONDS = 3.0

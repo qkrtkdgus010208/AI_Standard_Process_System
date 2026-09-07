@@ -576,4 +576,5 @@ __pycache__/
 *.pt
 *.onnx
 datasets/
+/project_admin/step_guide_images/
 EOF

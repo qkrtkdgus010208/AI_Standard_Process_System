@@ -16,6 +16,20 @@ Table products {
   total_steps integer [not null]
 }
 
+Table product_step_guides {
+  product_id text [not null]
+  step_no integer [not null]
+  image_path text [not null]
+  mime_type text [not null, default: 'image/jpeg']
+  byte_size integer [not null, default: 0]
+  sha256 text [not null, default: '']
+  updated_at datetime [not null, default: `datetime('now', '+9 hours')`]
+
+  indexes {
+    (product_id, step_no) [pk]
+  }
+}
+
 Table work_sessions {
   session_id integer [pk, increment]
   employee_id text
@@ -123,6 +137,7 @@ Ref: work_sessions.employee_id > employees.employee_id
 
 Ref: product_runs.employee_id > employees.employee_id
 Ref: product_runs.product_id > products.product_id
+Ref: product_step_guides.product_id > products.product_id
 
 Ref: step_runs.product_run_id > product_runs.product_run_id
 Ref: pause_logs.step_run_id > step_runs.step_run_id
