@@ -12,7 +12,7 @@ void Buzzer_Beep(unsigned char tone, int duration)
 
 void Wrong_Sound(void)
 {
-	TIM3_Freq_Generation_DR50(50);
+	TIM3_Freq_Generation_DR50(350);
 }
 
 void Correct_Sound(uint32_t freq)

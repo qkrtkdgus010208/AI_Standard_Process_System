@@ -139,7 +139,7 @@ class WorkStateController(QObject):
 
     def register_defect(self) -> None:
         """수동 불량을 등록·전송하고 0단계 대기 상태로 초기화합니다."""
-        if self.snapshot.state != "running" or self.snapshot.current_step <= 0:
+        if self.snapshot.state not in ("running", "paused") or self.snapshot.current_step <= 0:
             self.log_created.emit("warning", "작업이 진행 중일 때만 불량을 등록할 수 있습니다.")
             return
         # 1단계: 수동 불량 상태 전송

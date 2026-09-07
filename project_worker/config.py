@@ -6,7 +6,7 @@ TEST_MODE = False
 
 # UART / STM32 설정 (Jetson/Linux 장치 경로)
 UART_ENABLED = True        # TEST_MODE와 독립적으로 제어. False면 UART 스레드가 대기 루프로만 실행됩니다.
-UART_PORT = "/dev/ttyUSB0"  # 필요 시 "/dev/ttyACM0"으로 변경
+UART_PORT = "/dev/ttyACM0"  # STM32 연결 포트 (/dev/ttyACM0 또는 /dev/ttyUSB0)
 UART_BAUDRATE = 115200
 UART_TIMEOUT_SECONDS = 0.2
 

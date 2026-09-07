@@ -279,10 +279,10 @@ class WorkerWindow(QMainWindow):
         self.defect_button = QPushButton("불량 등록")
         self.defect_button.setObjectName("dangerButton")
         self.defect_button.setEnabled(False)
-        self.start_button.clicked.connect(self.work_controller.start)
+        self.start_button.clicked.connect(self.on_start_work_clicked)
         self.pause_button.clicked.connect(self.work_controller.pause)
         self.resume_button.clicked.connect(self.work_controller.resume)
-        self.defect_button.clicked.connect(self.work_controller.register_defect)
+        self.defect_button.clicked.connect(self.on_defect_clicked)
         control_grid = QGridLayout()
         control_grid.addWidget(self.start_button, 0, 0)
         control_grid.addWidget(self.pause_button, 0, 1)
@@ -330,7 +330,7 @@ class WorkerWindow(QMainWindow):
         log_card, log_layout = self._make_card("시스템 기록")
         self.log_list = QListWidget()
         self.log_list.setAlternatingRowColors(True)
-        self.log_list.setMaximumHeight(90)
+        self.log_list.setMaximumHeight(130)
         log_layout.addWidget(self.log_list)
 
         # ── 레이아웃 조립 ──
@@ -608,48 +608,114 @@ class WorkerWindow(QMainWindow):
                     QPixmap.fromImage(QImage(rgb.data, fw, fh, fw * 3, QImage.Format_RGB888))
                 )
 
+    def on_start_work_clicked(self) -> None:
+        """'작업 시작' 버튼 클릭 시 공정을 시작하고 STM32로 'S' 명령을 전송합니다."""
+        self.work_controller.start()
+        if self.work_controller.snapshot.state == "running":
+            if self.uart_thread.send_message("S"):
+                self.add_log("info", "[UART 송신] S → STM32 작업 시작 명령 전달")
+            else:
+                self.add_log("warning", "[UART 송신 실패] S (시리얼 포트 미연결)")
+
+    def on_defect_clicked(self) -> None:
+        """'불량 등록' 버튼 클릭 시 작업을 종료하고 STM32로 'R' 명령을 전송합니다."""
+        self.work_controller.register_defect()
+        if self.uart_thread.send_message("R"):
+            self.add_log("info", "[UART 송신] R → STM32 작업 종료 및 초기화 전달")
+        else:
+            self.add_log("warning", "[UART 송신 실패] R (시리얼 포트 미연결)")
+
     # ── AI 판정 ──────────────────────────────────────────────────────────────
 
     def request_ai_judgement(self) -> None:
         """최신 Frame을 AI Thread에 전달하고 UI는 즉시 반환합니다."""
-        if self._latest_frame is None:
-            self.add_log("warning", "판정할 Camera Frame이 없습니다.")
+        if self._ai_busy:
+            self.add_log("warning", "이미 AI 판정이 진행 중입니다.")
             return
         if self.work_controller.snapshot.state != "running":
             self.add_log("warning", "작업을 시작한 뒤 AI 판정을 실행하세요.")
             return
+        frame = self._latest_frame
+        if frame is None:
+            if config.TEST_MODE or config.AI_BACKEND == "mock":
+                import numpy as np
+                frame = np.zeros((720, 1280, 3), dtype=np.uint8) if cv2 else "mock_frame"
+            else:
+                self.add_log("warning", "판정할 Camera Frame이 없습니다.")
+                return
         self._ai_busy = True
         self.ai_button.setEnabled(False)
         self.ai_button.setText("판정 중...")
-        self.ai_thread.submit_frame(self._latest_frame)
+        self.ai_thread.submit_frame(frame)
 
     def handle_ai_result(self, result: JudgeResult) -> None:
-        """AI Thread 판정 결과를 Controller에 반영합니다."""
+        """AI Thread 판정 결과를 Controller에 반영하고 STM32로 P/F/R을 전송합니다."""
         self._ai_busy = False
         self.ai_button.setText("AI 판정 실행")
         self.ai_button.setEnabled(self.work_controller.snapshot.state == "running")
         self._update_result_display(result.result.lower(), result.confidence)
+
+        # 현재 STEP이 제품의 마지막 STEP인지 확인
+        current_step = self.work_controller.snapshot.current_step
+        total_steps = self.work_controller.snapshot.total_steps
+        is_final_step = (current_step >= total_steps)
+
         self.work_controller.apply_judgement(result.result, result.detail)
+
+        # AI 판정 결과에 따른 STM32 명령 전송:
+        # - PASS이고 마지막 단계인 경우: 작업 종료이므로 'R' 전송 (STM32 LED 끄고 STEP 0 초기화)
+        # - PASS이고 중간 단계인 경우: 'P' 전송 (다음 STEP 이동)
+        # - FAIL인 경우: 'F' 전송 (불량 알람)
+        if result.result.upper() == "PASS":
+            if is_final_step:
+                if self.uart_thread.send_message("R"):
+                    self.add_log("success", "[UART 송신] R → STM32 공정 완료 전달 (작업 종료 및 STEP 0 초기화)")
+                else:
+                    self.add_log("warning", "[UART 송신 실패] R (시리얼 포트 미연결)")
+            else:
+                if self.uart_thread.send_message("P"):
+                    self.add_log("success", f"[UART 송신] P → STM32 PASS 전달 (정상 LED/부저, 다음 STEP 진입)")
+                else:
+                    self.add_log("warning", f"[UART 송신 실패] P (시리얼 포트 미연결)")
+        else:
+            if self.uart_thread.send_message("F"):
+                self.add_log("error", f"[UART 송신] F → STM32 FAIL 전달 (불량 LED/부저 경보)")
+            else:
+                self.add_log("warning", f"[UART 송신 실패] F (시리얼 포트 미연결)")
 
     # ── UART / TCP 메시지 처리 ───────────────────────────────────────────────
 
     def handle_uart_message(self, raw_message: str) -> None:
-        """STM32 UART 명령을 파싱하여 작업 상태에 반영합니다."""
+        """STM32 UART 명령을 파싱하여 작업 상태에 반영하고 시스템 기록에 상세히 남깁니다."""
         message = parse_message(raw_message)
-        self.add_log("info", f"UART 수신: {message.raw}")
-        _UART_HANDLERS = {
-            "PASS":   lambda: self.work_controller.apply_judgement("PASS", "UART 판정: PASS"),
-            "FAIL":   lambda: self.work_controller.apply_judgement("FAIL", "UART 판정: FAIL"),
-            "PAUSE":  self.work_controller.pause,
-            "RESUME": self.work_controller.resume,
-            "RESET":  self.work_controller.register_defect,
-            "START":  self.work_controller.start,
-        }
-        handler = _UART_HANDLERS.get(message.command)
-        if handler:
-            handler()
+        cmd = message.command
+
+        if cmd == "CHECK":
+            self.add_log("info", f"[UART 수신] {message.raw} → AI 판정 실행 (STM32 버튼 0)")
+            self.request_ai_judgement()
+        elif cmd == "PAUSE":
+            self.add_log("warning", f"[UART 수신] {message.raw} → 공정 일시정지 (STM32 버튼 1)")
+            self.work_controller.pause()
+        elif cmd == "RESUME":
+            self.add_log("info", f"[UART 수신] {message.raw} → 공정 작업 재개 (STM32 버튼 1)")
+            self.work_controller.resume()
+        elif cmd == "RESET":
+            self.add_log("error", f"[UART 수신] {message.raw} → 공정 초기화 / 수동 불량 등록 (STM32 버튼 2)")
+            self.work_controller.register_defect()
+        elif cmd == "START":
+            self.add_log("info", f"[UART 수신] {message.raw} → 공정 시작")
+            self.on_start_work_clicked()
+        elif cmd == "PASS":
+            self.add_log("success", f"[UART 수신] {message.raw} → 판정: PASS")
+            self.work_controller.apply_judgement("PASS", "UART 판정: PASS")
+        elif cmd == "FAIL":
+            self.add_log("error", f"[UART 수신] {message.raw} → 판정: FAIL")
+            self.work_controller.apply_judgement("FAIL", "UART 판정: FAIL")
+        elif cmd.isdigit() or cmd in ("INIT!!!", "BUZZER TEST!!"):
+            # STM32 부저 타이머 디버그 카운트(0, 1, 2...) 및 테스트 출력 무시
+            return
         else:
-            self.add_log("warning", f"처리하지 않은 UART 명령: {message.raw}")
+            self.add_log("warning", f"[UART 수신] {message.raw} (미등록 명령)")
 
     def handle_tcp_message(self, raw_message: str, address: str) -> None:
         """Monitoring PC 호출 메시지를 UI Main Thread에서 처리합니다."""

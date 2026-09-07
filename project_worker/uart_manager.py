@@ -1,5 +1,6 @@
 """STM32 UART 수신을 UI와 분리하여 처리하는 Thread 모듈입니다."""
 
+import os
 from typing import Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -59,20 +60,37 @@ class UartReceiverThread(QThread):
             self.status_changed.emit("pyserial이 설치되지 않았습니다.", False)
             return
 
+        # 후보 포트 자동 탐색 (기본 설정 포트가 없으면 다른 시리얼 포트 확인)
+        actual_port = self.port
+        if not os.path.exists(actual_port):
+            candidates = ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyACM1", "/dev/ttyTHS1"]
+            for candidate in candidates:
+                if os.path.exists(candidate):
+                    actual_port = candidate
+                    break
+
+        if not os.path.exists(actual_port):
+            self.status_changed.emit(f"UART 포트 없음 ({self.port})", False)
+            return
+
         try:
             self._serial = serial.Serial(
-                port=self.port,
+                port=actual_port,
                 baudrate=self.baudrate,
                 timeout=config.UART_TIMEOUT_SECONDS,
             )
+            self.port = actual_port
             self._is_connected = True
-            self.status_changed.emit(f"UART 연결: {self.port}", True)
+            self.status_changed.emit(f"UART 연결: {actual_port}", True)
             while self._running:
                 raw_line = self._serial.readline()
                 if raw_line:
-                    self.message_received.emit(
-                        raw_line.decode("utf-8", errors="replace").strip()
-                    )
+                    line_str = raw_line.decode("utf-8", errors="replace").strip()
+                    if line_str:
+                        self.message_received.emit(line_str)
+        except PermissionError:
+            self._is_connected = False
+            self.status_changed.emit(f"UART 권한 오류: {actual_port} (sudo chmod 666 {actual_port})", False)
         except Exception as error:
             self._is_connected = False
             self.status_changed.emit(f"UART 연결 실패: {error}", False)
@@ -87,19 +105,23 @@ class UartReceiverThread(QThread):
             self._serial = None
 
     def send_message(self, message: str) -> bool:
-        """STM32로 메시지를 전송하며 연결되지 않은 경우 False를 반환합니다."""
-        if self._serial is None or not self._serial.is_open:
+        """STM32로 단일 명령 문자를 전송하며 연결되지 않은 경우 False를 반환합니다."""
+        if config.TEST_MODE:
+            return True
+        if self._serial is None or not getattr(self._serial, "is_open", False):
             return False
         try:
-            self._serial.write((message.strip() + "\n").encode("utf-8"))
+            # 단일 문자 명령('S', 'P', 'F') 전송 시 불필요한 개행을 붙이지 않아 STM32 수신 버퍼 덮어쓰기 방지
+            payload = message.strip().encode("utf-8")
+            self._serial.write(payload)
+            self._serial.flush()
             return True
         except Exception:
             return False
 
     def simulate_receive(self, message: str) -> None:
-        """TEST_MODE에서 UART 수신 동작을 시험합니다."""
-        if config.TEST_MODE or not config.UART_ENABLED:
-            self.message_received.emit(message)
+        """UART 수신 동작을 시험(시뮬레이션)합니다."""
+        self.message_received.emit(message)
 
     def stop(self) -> None:
         """UART 수신 Loop와 Serial Port를 종료합니다."""

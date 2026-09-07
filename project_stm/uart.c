@@ -51,10 +51,13 @@ extern volatile uint8_t Uart_Data_In;
 
 void USART2_IRQHandler(void)
 {
-  *Uart_data = USART2->DR;
-  *(Uart_data + 1) = '\0';
-
-  Uart_Data_In = 1;
+  uint8_t data = USART2->DR;
+  if (data != '\r' && data != '\n')
+  {
+    Uart_data[0] = data;
+    Uart_data[1] = '\0';
+    Uart_Data_In = 1;
+  }
 
   NVIC_ClearPendingIRQ(38);
 }
