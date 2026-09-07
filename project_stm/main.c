@@ -23,6 +23,37 @@ extern volatile uint8_t TIM2_Expired;
 
 volatile led_step_t led_step = LED_STEP0;
 
+/* ── 중복 코드 제거를 위한 정적 헬퍼 함수 ───────────────────────────── */
+
+/**
+ * @brief 버튼 누름 후 바운싱 안정화 및 손을 뗄 때까지 대기합니다.
+ */
+static void Wait_Button_Release(uint8_t btn_pin)
+{
+	for (volatile int d = 0; d < 300000; d++);
+	int timeout = 5000000;
+	while (!Macro_Check_Bit_Set(GPIOB->IDR, btn_pin) && --timeout > 0);
+	for (volatile int d = 0; d < 200000; d++);
+}
+
+/**
+ * @brief 시스템의 LED 소등, 버튼 인터럽트 비활성화 및 공정 상태를 0단계로 초기화합니다.
+ * @param clear_fail_led 1이면 FAIL LED를 포함한 전 LED(0x3ff) 소등, 0이면 STEP LED(0x1ff) 소등
+ */
+static void Reset_System_State(uint8_t clear_fail_led)
+{
+	Fail_LED_Off();
+	if (led_step != LED_STEP0)
+	{
+		Step_LED_Off(led_step);
+	}
+	Macro_Clear_Area(GPIOC->ODR, clear_fail_led ? 0x3ff : 0x1ff, 0);
+	led_step = LED_STEP0;
+	btn_state = BTN_RELEASED;
+	is_pause = 0;
+	Btn_ISR_Enable(0, 0, 0);
+}
+
 void Main(void)
 {
 	static const char *Uart_Tx_Dataset[] = {"Check\n", "Pause\n", "Resume\n", "Reset\n"};
@@ -35,7 +66,7 @@ void Main(void)
 		{
 			switch (Uart_data[0])
 			{
-			case 'S':
+			case 'S': // 작업 시작
 				Btn_ISR_Enable(1, 1, 1);
 				led_step = LED_STEP1;
 				Step_LED_On(led_step);
@@ -44,7 +75,7 @@ void Main(void)
 				is_pause = 0;
 				break;
 
-			case 'P':
+			case 'P': // PASS (다음 STEP 진입)
 				if (led_step == LED_STEP0)
 					break;
 
@@ -56,37 +87,19 @@ void Main(void)
 				Buzzer_Play(SOUND_PASS);
 				break;
 
-			case 'F':
+			case 'F': // FAIL
 				Fail_LED_On();
 				is_pause = 0;
 				Buzzer_Play(SOUND_FAIL);
 				break;
 
 			case 'C': // 모든 STEP 완료 / 작업 정상 종료
-				Fail_LED_Off();
-				if (led_step != LED_STEP0)
-				{
-					Step_LED_Off(led_step);
-				}
-				Macro_Clear_Area(GPIOC->ODR, 0x1ff, 0);
-				led_step = LED_STEP0;
-				btn_state = BTN_RELEASED;
-				is_pause = 0;
-				Btn_ISR_Enable(0, 0, 0);
+				Reset_System_State(0);
 				Buzzer_Play(SOUND_COMPLETE);
 				break;
 
 			case 'R': // 불량 등록 / 리셋
-				Fail_LED_Off();
-				if (led_step != LED_STEP0)
-				{
-					Step_LED_Off(led_step);
-				}
-				Macro_Clear_Area(GPIOC->ODR, 0x1ff, 0);
-				led_step = LED_STEP0;
-				btn_state = BTN_RELEASED;
-				is_pause = 0;
-				Btn_ISR_Enable(0, 0, 0);
+				Reset_System_State(0);
 				Buzzer_Play(SOUND_DEFECT);
 				break;
 
@@ -111,17 +124,8 @@ void Main(void)
 				break;
 
 			case 'E': // Qt 프로그램 종료 / 로그아웃 (전체 종료 및 대기 상태)
-				Fail_LED_Off();
-				if (led_step != LED_STEP0)
-				{
-					Step_LED_Off(led_step);
-				}
-				Macro_Clear_Area(GPIOC->ODR, 0x3ff, 0); // STEP 1~9 및 FAIL LED 완전 소등
-				led_step = LED_STEP0;
-				btn_state = BTN_RELEASED;
-				is_pause = 0;
-				Btn_ISR_Enable(0, 0, 0); // 모든 버튼 인터럽트 비활성화
-				Buzzer_Stop();           // 부저 정지
+				Reset_System_State(1);
+				Buzzer_Stop();
 				break;
 
 			case '1':
@@ -172,11 +176,7 @@ void Main(void)
 				Btn_ISR_Enable(!is_pause, 1, 1);
 				break;
 			}
-			for (volatile int d = 0; d < 300000; d++);
-			int timeout_check = 5000000;
-			while (!Macro_Check_Bit_Set(GPIOB->IDR, BTN_CHECK) && --timeout_check > 0);
-			for (volatile int d = 0; d < 200000; d++);
-
+			Wait_Button_Release(BTN_CHECK);
 			Uart2_Send_String(Uart_Tx_Dataset[0]);
 			btn_state = BTN_RELEASED;
 			break;
@@ -192,11 +192,7 @@ void Main(void)
 				break;
 			}
 
-			// 디바운스 및 버튼 릴리즈 대기
-			for (volatile int d = 0; d < 300000; d++);
-			int timeout_pause = 5000000;
-			while (!Macro_Check_Bit_Set(GPIOB->IDR, BTN_PAUSE) && --timeout_pause > 0);
-			for (volatile int d = 0; d < 200000; d++);
+			Wait_Button_Release(BTN_PAUSE);
 
 			if (is_pause == 0)
 			{
@@ -224,21 +220,9 @@ void Main(void)
 
 		case BTN_RESET_PRESSED:
 			Btn_ISR_Enable(0, 0, 0);
-			for (volatile int d = 0; d < 300000; d++);
-			int timeout_reset = 5000000;
-			while (!Macro_Check_Bit_Set(GPIOB->IDR, BTN_RESET) && --timeout_reset > 0);
-			for (volatile int d = 0; d < 200000; d++);
-
+			Wait_Button_Release(BTN_RESET);
 			Uart2_Send_String(Uart_Tx_Dataset[3]);
-			if (led_step != LED_STEP0)
-			{
-				Step_LED_Off(led_step);
-			}
-			Macro_Clear_Area(GPIOC->ODR, 0x1ff, 0);
-			led_step = LED_STEP0;
-			btn_state = BTN_RELEASED;
-			is_pause = 0;
-			Fail_LED_Off();
+			Reset_System_State(0);
 			Buzzer_Play(SOUND_DEFECT);
 			break;
 		}

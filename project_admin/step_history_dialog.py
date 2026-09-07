@@ -8,12 +8,17 @@ from PyQt5.QtWidgets import (
 )
 
 from database_manager import DatabaseManager
+from ui_helpers import fill_table, make_read_only_table
 
 
 class StepHistoryDialog(QDialog):
     """선택한 제품 작업 회차의 STEP 작업시간을 조회합니다."""
 
     step_selected = pyqtSignal(int)
+
+    # 하위 호환성을 위한 헬퍼 바인딩
+    _make_table = staticmethod(make_read_only_table)
+    _fill_table = staticmethod(fill_table)
 
     def __init__(self, product_run: dict, database_manager: DatabaseManager, parent=None):
         super().__init__(parent)
@@ -24,35 +29,6 @@ class StepHistoryDialog(QDialog):
         self.resize(1060, 700)
         self._create_ui()
         self.load_steps()
-
-    @staticmethod
-    def _make_table(headers: list[str]) -> QTableWidget:
-        table = QTableWidget(0, len(headers))
-        table.setHorizontalHeaderLabels(headers)
-        table.setAlternatingRowColors(True)
-        table.setShowGrid(False)
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
-        table.verticalHeader().setVisible(False)
-        table.verticalHeader().setDefaultSectionSize(42)
-        header = table.horizontalHeader()
-        for column in range(len(headers)):
-            header.setSectionResizeMode(column, QHeaderView.Stretch)
-        return table
-
-    @staticmethod
-    def _fill_table(table: QTableWidget, rows: list[list]) -> None:
-        table.blockSignals(True)
-        table.clearContents()
-        table.setRowCount(len(rows))
-        for row_index, values in enumerate(rows):
-            for column_index, value in enumerate(values):
-                display = "—" if value is None or value == "" else str(value)
-                item = QTableWidgetItem(display)
-                item.setTextAlignment(Qt.AlignCenter)
-                table.setItem(row_index, column_index, item)
-        table.blockSignals(False)
 
     def _create_ui(self) -> None:
         header = QHBoxLayout()

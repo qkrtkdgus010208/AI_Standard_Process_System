@@ -87,50 +87,10 @@ class MonitoringGatewayThread(QThread):
             client.sendall((json.dumps(response, ensure_ascii=False) + "\n").encode("utf-8"))
 
     def _process_request(self, request: dict, client_ip: str = "127.0.0.1") -> dict:
-        """요청 종류에 따라 인증 또는 Token 검증을 수행합니다."""
+        """요청 종류에 따라 인증 또는 Token 검증 후 해당 핸들러로 전달합니다."""
         request_type = str(request.get("type", "")).lower()
         if request_type == "auth":
-            employee = self.database_manager.verify_worker_login(
-                str(request.get("employee_id", "")), str(request.get("password", ""))
-            )
-            if employee is None:
-                return {"ok": False, "message": "직원번호 또는 비밀번호가 올바르지 않습니다."}
-            token = secrets.token_urlsafe(32)
-            displaced_sessions = []
-            with self._sessions_lock:
-                displaced_tokens = self.endpoint_registry.bind(
-                    employee["employee_id"], client_ip, token
-                )
-                for displaced_token in displaced_tokens:
-                    displaced_session = self._sessions.pop(displaced_token, None)
-                    if displaced_session is not None:
-                        displaced_sessions.append(displaced_session)
-                self._sessions[token] = {"employee": employee, "client_ip": client_ip}
-            for displaced_session in displaced_sessions:
-                if (
-                    displaced_session["employee"]["employee_id"]
-                    != employee["employee_id"]
-                ):
-                    displaced_employee_id = displaced_session["employee"]["employee_id"]
-                    self.database_manager.end_work_session(displaced_employee_id)
-                    self.worker_state_received.emit({
-                        "employee_id": displaced_employee_id,
-                        "event": "logout",
-                    })
-            self.database_manager.start_work_session(employee["employee_id"])
-            work_state = self.database_manager.get_incomplete_work_state(
-                employee["employee_id"]
-            )
-            self.worker_state_received.emit({
-                "employee_id": employee["employee_id"],
-                "event": "auth",
-            })
-            return {
-                "ok": True,
-                "token": token,
-                "employee": employee,
-                "work_state": work_state,
-            }
+            return self._handle_auth_request(request, client_ip)
 
         token = str(request.get("token", ""))
         with self._sessions_lock:
@@ -142,52 +102,106 @@ class MonitoringGatewayThread(QThread):
         employee = session["employee"]
 
         if request_type in ("products", "get_products"):
-            products = self.database_manager.search_products("")
-            return {
-                "ok": True,
-                "products": [
-                    {
-                        "product_id": str(product["product_id"]),
-                        "product_name": str(product["product_name"]),
-                        "total_steps": int(product["total_steps"]),
-                    }
-                    for product in products
-                ],
-            }
-
+            return self._handle_products_request()
         if request_type == "state":
-            state = {
-                "employee_id": employee["employee_id"],
-                "name": employee["name"],
-                "product_id": str(request.get("product_id", "")),
-                "product_name": str(request.get("product_name", "")),
-                "state": str(request.get("state", "")),
-                "current_step": int(request.get("current_step", 1)),
-                "total_steps": int(request.get("total_steps", 1)),
-                "last_result": str(request.get("last_result", "waiting")),
-                "event": str(request.get("event", "")),
-                "defect_type": str(request.get("defect_type", "")),
-                "detail": str(request.get("detail", "")),
-            }
-            try:
-                self.database_manager.record_worker_state(state)
-            except ValueError as error:
-                return {"ok": False, "message": str(error)}
-            self.worker_state_received.emit(state)
-            return {"ok": True}
-
+            return self._handle_state_request(request, employee)
         if request_type == "logout":
-            self.database_manager.end_work_session(employee["employee_id"])
-            with self._sessions_lock:
-                self.endpoint_registry.unbind(employee["employee_id"], token)
-                self._sessions.pop(token, None)
-            self.worker_state_received.emit({
-                "employee_id": employee["employee_id"],
-                "event": "logout",
-            })
-            return {"ok": True}
+            return self._handle_logout_request(employee, token)
 
         return {"ok": False, "message": "지원하지 않는 요청입니다."}
+
+    def _handle_auth_request(self, request: dict, client_ip: str) -> dict:
+        """작업자 로그인 인증을 수행하고 토큰 및 이전 작업 상태를 발급합니다."""
+        employee = self.database_manager.verify_worker_login(
+            str(request.get("employee_id", "")), str(request.get("password", ""))
+        )
+        if employee is None:
+            return {"ok": False, "message": "직원번호 또는 비밀번호가 올바르지 않습니다."}
+
+        token = secrets.token_urlsafe(32)
+        displaced_sessions = []
+        with self._sessions_lock:
+            displaced_tokens = self.endpoint_registry.bind(
+                employee["employee_id"], client_ip, token
+            )
+            for displaced_token in displaced_tokens:
+                displaced_session = self._sessions.pop(displaced_token, None)
+                if displaced_session is not None:
+                    displaced_sessions.append(displaced_session)
+            self._sessions[token] = {"employee": employee, "client_ip": client_ip}
+
+        for displaced_session in displaced_sessions:
+            if displaced_session["employee"]["employee_id"] != employee["employee_id"]:
+                displaced_employee_id = displaced_session["employee"]["employee_id"]
+                self.database_manager.end_work_session(displaced_employee_id)
+                self.worker_state_received.emit({
+                    "employee_id": displaced_employee_id,
+                    "event": "logout",
+                })
+
+        self.database_manager.start_work_session(employee["employee_id"])
+        work_state = self.database_manager.get_incomplete_work_state(
+            employee["employee_id"]
+        )
+        self.worker_state_received.emit({
+            "employee_id": employee["employee_id"],
+            "event": "auth",
+        })
+        return {
+            "ok": True,
+            "token": token,
+            "employee": employee,
+            "work_state": work_state,
+        }
+
+    def _handle_products_request(self) -> dict:
+        """등록된 제품 목록을 조회하여 반환합니다."""
+        products = self.database_manager.search_products("")
+        return {
+            "ok": True,
+            "products": [
+                {
+                    "product_id": str(product["product_id"]),
+                    "product_name": str(product["product_name"]),
+                    "total_steps": int(product["total_steps"]),
+                }
+                for product in products
+            ],
+        }
+
+    def _handle_state_request(self, request: dict, employee: dict) -> dict:
+        """수신된 작업자 공정 상태를 DB에 저장하고 모니터링 이벤트로 통지합니다."""
+        state = {
+            "employee_id": employee["employee_id"],
+            "name": employee["name"],
+            "product_id": str(request.get("product_id", "")),
+            "product_name": str(request.get("product_name", "")),
+            "state": str(request.get("state", "")),
+            "current_step": int(request.get("current_step", 1)),
+            "total_steps": int(request.get("total_steps", 1)),
+            "last_result": str(request.get("last_result", "waiting")),
+            "event": str(request.get("event", "")),
+            "defect_type": str(request.get("defect_type", "")),
+            "detail": str(request.get("detail", "")),
+        }
+        try:
+            self.database_manager.record_worker_state(state)
+        except ValueError as error:
+            return {"ok": False, "message": str(error)}
+        self.worker_state_received.emit(state)
+        return {"ok": True}
+
+    def _handle_logout_request(self, employee: dict, token: str) -> dict:
+        """작업 세션을 종료하고 토큰을 해제합니다."""
+        self.database_manager.end_work_session(employee["employee_id"])
+        with self._sessions_lock:
+            self.endpoint_registry.unbind(employee["employee_id"], token)
+            self._sessions.pop(token, None)
+        self.worker_state_received.emit({
+            "employee_id": employee["employee_id"],
+            "event": "logout",
+        })
+        return {"ok": True}
 
     def stop(self) -> None:
         """Gateway와 모든 Memory Session을 안전하게 종료합니다."""

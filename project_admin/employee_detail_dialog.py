@@ -10,7 +10,8 @@ from PyQt5.QtWidgets import (
 
 from database_manager import DatabaseManager
 from step_history_dialog import StepHistoryDialog
-from tcp_client import TcpClient
+from tcp_client import SendResult, TcpClient, build_employee_message
+from ui_helpers import ROLE_DISPLAY_NAMES, fill_table, make_read_only_table
 
 
 class EmployeeMessageDialog(QDialog):
@@ -83,22 +84,8 @@ class EmployeeDetailDialog(QDialog):
         self._create_ui()
         self.load_employee_data()
 
-    @staticmethod
-    def _make_table(headers: list[str]) -> QTableWidget:
-        """조회 전용 테이블을 공통 디자인으로 만듭니다."""
-        table = QTableWidget(0, len(headers))
-        table.setHorizontalHeaderLabels(headers)
-        table.setAlternatingRowColors(True)
-        table.setShowGrid(False)
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
-        table.verticalHeader().setVisible(False)
-        table.verticalHeader().setDefaultSectionSize(42)
-        header = table.horizontalHeader()
-        for index in range(len(headers)):
-            header.setSectionResizeMode(index, QHeaderView.Stretch)
-        return table
+    # 공통 UI 헬퍼 위임
+    _make_table = staticmethod(make_read_only_table)
 
     @staticmethod
     def _display(value) -> str:
@@ -244,16 +231,8 @@ class EmployeeDetailDialog(QDialog):
         layout.addWidget(tabs, 1)
 
     def _fill_table(self, table: QTableWidget, rows: list[list]) -> None:
-        """2차원 데이터를 테이블에 안전하게 표시합니다."""
-        table.blockSignals(True)
-        table.clearContents()
-        table.setRowCount(len(rows))
-        for row_index, values in enumerate(rows):
-            for column_index, value in enumerate(values):
-                item = QTableWidgetItem(self._display(value))
-                item.setTextAlignment(Qt.AlignCenter)
-                table.setItem(row_index, column_index, item)
-        table.blockSignals(False)
+        """2차원 데이터를 테이블에 안전하게 표시합니다 (ui_helpers.fill_table 위임)."""
+        fill_table(table, rows)
 
     def load_employee_data(self) -> None:
         """기본정보, 출퇴근, 전체 제품 작업 기록을 불러옵니다."""
@@ -266,7 +245,7 @@ class EmployeeDetailDialog(QDialog):
             self.employee_id_label.setText(employee["employee_id"])
             self.name_label.setText(employee["name"])
             self.role_label.setText(
-                {"admin": "관리자", "worker": "작업자"}.get(
+                ROLE_DISPLAY_NAMES.get(
                     employee["role"], employee["role"] or "—"
                 )
             )

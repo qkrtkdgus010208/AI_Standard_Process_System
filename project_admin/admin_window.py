@@ -15,6 +15,7 @@ from employee_detail_dialog import EmployeeDetailDialog
 from product_dialog import ProductDialog
 from product_detail_dialog import ProductDetailDialog
 from tcp_client import TcpClient
+from ui_helpers import ROLE_DISPLAY_NAMES
 from worker_account_dialog import (
     WorkerRegistrationDialog, WorkerRevocationConfirmDialog,
     WorkerRevocationDialog,
@@ -377,7 +378,7 @@ class AdminWindow(QMainWindow):
             employee.get("employee_id", ""), employee.get("name", ""),
             attendance_text, employee.get("active_product_name") or "—",
             f"STEP {current_step}" if current_step is not None else "—",
-            {"admin": "관리자", "worker": "작업자"}.get(role, ""),
+            ROLE_DISPLAY_NAMES.get(role, ""),
         )
         for column_index, display_value in enumerate(values):
             item = QTableWidgetItem(str(display_value))

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
@@ -12,12 +12,14 @@ from PyQt5.QtWidgets import (
 )
 
 import config
-from auth_manager import (
-    MonitoringEventThread, ProductFetchThread, ProductInfo, ServerCheckThread, WorkerSession,
-)
+from auth_manager import WorkerSession
 from ai_judge import AiInferenceThread, JudgeResult
 from camera_manager import CameraThread
+from product_service import ProductInfo, ProductFetchThread
 from protocol import decode_message_text, parse_message
+from server_monitor import ServerMonitor
+from state_reporter import MonitoringEventThread
+from stm_controller import StmController
 from tcp_server import TcpServerThread
 from uart_manager import UartReceiverThread
 from work_state import WorkStateController
@@ -62,36 +64,41 @@ class WorkerWindow(QMainWindow):
         self.setMinimumSize(1120, 720)
         self.resize(1360, 1000)
 
+        # ── 상태 플래그 ──
         self._latest_frame = None
         self._ai_busy = False
         self._services_started = False
         self._saved_work_restored = False
         self._is_terminating = False
 
+        # ── 제품 목록 관련 ──
         self.products: list[ProductInfo] = []
         self._current_product: Optional[ProductInfo] = None
         self.product_fetch_thread: Optional[ProductFetchThread] = None
-        self.server_check_thread: Optional[ServerCheckThread] = None
         self.message_popup: Optional[QMessageBox] = None
 
+        # ── 서비스 스레드 ──
         self.work_controller = WorkStateController()
         self.camera_thread = CameraThread()
         self.ai_thread = AiInferenceThread()
         self.uart_thread = UartReceiverThread()
         self.tcp_thread = TcpServerThread()
         self.monitoring_event_thread = MonitoringEventThread(session=session, parent=self)
-        self.monitoring_event_thread.status_changed.connect(self.handle_monitoring_event_status)
+        self.monitoring_event_thread.status_changed.connect(self._on_monitoring_event_status)
         self.monitoring_event_thread.start()
 
-        self.server_monitor_timer = QTimer(self)
-        self.server_monitor_timer.timeout.connect(self._auto_check_server)
+        # ── STM32 명령 컨트롤러 ──
+        self.stm = StmController(self.uart_thread, self.add_log)
 
-        self._saved_work_restored = False
-        self._stm32_exit_sent = False
+        # ── 서버 연결 감시 ──
+        self.server_monitor = ServerMonitor(
+            parent=self,
+            on_disconnected=self.handle_server_disconnected,
+        )
 
         self._create_ui()
         self._connect_signals()
-        # 시작과 동시에 제품 목록 조회 (QTimer로 UI가 먼저 그려진 뒤 실행)
+        # UI가 먼저 그려진 뒤 서비스 시작
         QTimer.singleShot(0, self._start_all)
 
     # ── UI 생성 헬퍼 ─────────────────────────────────────────────────────────
@@ -405,7 +412,7 @@ class WorkerWindow(QMainWindow):
         for thread in (self.camera_thread, self.ai_thread, self.uart_thread, self.tcp_thread):
             thread.start()
         self.add_log("info", "작업자 프로그램 서비스를 시작했습니다.")
-        self.server_monitor_timer.start(2000)
+        self.server_monitor.start()
         self.fetch_products()
 
     # ── 제품 목록 관련 ───────────────────────────────────────────────────────
@@ -438,7 +445,7 @@ class WorkerWindow(QMainWindow):
                 self.add_log("info" if success else "warning", message)
                 return
             else:
-                self._ensure_stm32_standby()
+                self.stm.send_standby()
 
         if self.products:
             self._on_product_changed(self.product_name_combo.currentIndex())
@@ -506,7 +513,7 @@ class WorkerWindow(QMainWindow):
         )
 
         # 서버에서 복원된 작업 상황(STEP, 일시정지 상태)을 STM32로 전송하여 하드웨어 동기화
-        self.send_work_status_to_stm32(current_step, saved_state.get("state", "running"))
+        self.stm.send_step_restore(current_step, saved_state.get("state", "running"))
 
         QMessageBox.information(
             self,
@@ -618,98 +625,47 @@ class WorkerWindow(QMainWindow):
                     QPixmap.fromImage(QImage(rgb.data, fw, fh, fw * 3, QImage.Format_RGB888))
                 )
 
+    # ── 작업 제어 버튼 핸들러 ────────────────────────────────────────────────
+
     def on_start_work_clicked(self) -> None:
         """'작업 시작' 버튼 클릭 시 공정을 시작하고 STM32로 'S' 명령을 전송합니다."""
         self.work_controller.start()
         if self.work_controller.snapshot.state == "running":
-            if self.uart_thread.send_message("S"):
-                self.add_log("info", "[UART 송신] S → STM32 작업 시작 명령 전달")
-            else:
-                self.add_log("warning", "[UART 송신 실패] S (시리얼 포트 미연결)")
+            self.stm.send_start()
 
     def on_pause_clicked(self) -> None:
         """'일시정지' 버튼 클릭 시 작업을 일시정지하고 STM32로 'U' 명령을 전송합니다."""
         self.work_controller.pause()
         if self.work_controller.snapshot.state == "paused":
-            if self.uart_thread.send_message("U"):
-                self.add_log("warning", "[UART 송신] U → STM32 공정 일시정지 전달 (일시정지 부저)")
-            else:
-                self.add_log("warning", "[UART 송신 실패] U (시리얼 포트 미연결)")
+            self.stm.send_pause()
 
     def on_resume_clicked(self) -> None:
         """'작업 재개' 버튼 클릭 시 작업을 재개하고 STM32로 'M' 명령을 전송합니다."""
         self.work_controller.resume()
         if self.work_controller.snapshot.state == "running":
-            if self.uart_thread.send_message("M"):
-                self.add_log("info", "[UART 송신] M → STM32 공정 작업 재개 전달 (작업재개 부저)")
-            else:
-                self.add_log("warning", "[UART 송신 실패] M (시리얼 포트 미연결)")
+            self.stm.send_resume()
 
     def on_defect_clicked(self) -> None:
         """'불량 등록' 버튼 클릭 시 작업을 종료하고 STM32로 'R' 명령을 전송합니다."""
         self.work_controller.register_defect()
-        if self.uart_thread.send_message("R"):
-            self.add_log("error", "[UART 송신] R → STM32 수동 불량 등록 전달 (불량처리 부저)")
-        else:
-            self.add_log("warning", "[UART 송신 실패] R (시리얼 포트 미연결)")
+        self.stm.send_defect()
 
     def on_logout_clicked(self) -> None:
         """로그아웃 버튼 클릭 시 STM32에 프로그램 종료('E') 명령을 전송하고 로그아웃합니다."""
-        self._send_exit_to_stm32()
+        self.stm.send_exit()
         self.logout_requested.emit()
 
-    def _send_exit_to_stm32(self) -> None:
-        """STM32에 프로그램 종료 / 대기 상태 전환 명령('E')을 전송합니다."""
-        if getattr(self, "_stm32_exit_sent", False):
-            return
-        self._stm32_exit_sent = True
-        try:
-            if self.uart_thread.send_message("E"):
-                self.add_log("info", "[UART 송신] E → STM32 프로그램 종료/대기 상태 전환")
-            QThread.msleep(50)
-        except Exception:
-            pass
-
     def send_work_status_to_stm32(self, current_step: int, state: str) -> bool:
-        """서버에서 복원된 작업 상태(STEP, 일시정지)를 STM32로 전송하여 하드웨어를 동기화합니다."""
-        if not (1 <= current_step <= 9):
-            return False
+        """서버에서 복원된 작업 상태를 STM32로 전송합니다 (StmController 위임)."""
+        return self.stm.send_step_restore(current_step, state)
 
-        # UART 스레드가 포트에 정상 연결될 때까지 대기 (최대 1.5초)
-        for _ in range(15):
-            if self.uart_thread.is_connected():
-                break
-            QThread.msleep(100)
-
-        # 1. 해당 STEP으로 복원 (STEP LED 점등, 버튼 활성화)
-        step_char = str(current_step)
-        if self.uart_thread.send_message(step_char):
-            self.add_log(
-                "info",
-                f"[UART 송신] {step_char} → STM32 이전 작업 복원 (STEP {current_step} LED 점등 및 버튼 활성화)",
-            )
-        else:
-            self.add_log("warning", f"[UART 송신 실패] {step_char} (시리얼 포트 미연결)")
-            return False
-
-        # 2. 일시정지 상태인 경우 일시정지 명령('U') 추가 전송
-        if state == "paused":
-            QThread.msleep(100)
-            if self.uart_thread.send_message("U"):
-                self.add_log("warning", "[UART 송신] U → STM32 복원 작업 일시정지 반영 (일시정지 부저)")
-            else:
-                self.add_log("warning", "[UART 송신 실패] U (시리얼 포트 미연결)")
-
-        return True
+    def _send_exit_to_stm32(self) -> None:
+        """하위 호환성 유지용 위임 메서드"""
+        self.stm.send_exit()
 
     def _ensure_stm32_standby(self) -> None:
-        """복원할 이전 작업이 없는 경우 STM32를 안전한 대기 상태('E')로 설정합니다."""
-        for _ in range(10):
-            if self.uart_thread.is_connected():
-                break
-            QThread.msleep(100)
-        if self.uart_thread.send_message("E"):
-            self.add_log("info", "[UART 송신] E → STM32 초기 대기 상태 설정 (LED 소등 및 버튼 비활성화)")
+        """하위 호환성 유지용 위임 메서드"""
+        self.stm.send_standby()
 
     # ── AI 판정 ──────────────────────────────────────────────────────────────
 
@@ -749,25 +705,16 @@ class WorkerWindow(QMainWindow):
         self.work_controller.apply_judgement(result.result, result.detail)
 
         # AI 판정 결과에 따른 STM32 명령 전송:
-        # - PASS이고 마지막 단계인 경우: 작업 완료이므로 'C' 전송 (작업 완료 팡파레 부저 및 STEP 0 초기화)
-        # - PASS이고 중간 단계인 경우: 'P' 전송 (PASS 부저 및 다음 STEP 진입)
-        # - FAIL인 경우: 'F' 전송 (불량 알람)
+        # - PASS이고 마지막 단계: 'C' 전송 (작업 완료 팡파레 + STEP 0 초기화)
+        # - PASS이고 중간 단계: 'P' 전송 (PASS 부저 + 다음 STEP 진입)
+        # - FAIL: 'F' 전송 (불량 알람)
         if result.result.upper() == "PASS":
             if is_final_step:
-                if self.uart_thread.send_message("C"):
-                    self.add_log("success", "[UART 송신] C → STM32 공정 완료 전달 (작업 완료 부저 및 STEP 0 초기화)")
-                else:
-                    self.add_log("warning", "[UART 송신 실패] C (시리얼 포트 미연결)")
+                self.stm.send_complete()
             else:
-                if self.uart_thread.send_message("P"):
-                    self.add_log("success", f"[UART 송신] P → STM32 PASS 전달 (정상 LED/부저, 다음 STEP 진입)")
-                else:
-                    self.add_log("warning", f"[UART 송신 실패] P (시리얼 포트 미연결)")
+                self.stm.send_pass()
         else:
-            if self.uart_thread.send_message("F"):
-                self.add_log("error", f"[UART 송신] F → STM32 FAIL 전달 (불량 LED/부저 경보)")
-            else:
-                self.add_log("warning", f"[UART 송신 실패] F (시리얼 포트 미연결)")
+            self.stm.send_fail()
 
     # ── UART / TCP 메시지 처리 ───────────────────────────────────────────────
 
@@ -776,32 +723,52 @@ class WorkerWindow(QMainWindow):
         message = parse_message(raw_message)
         cmd = message.command
 
-        if cmd == "CHECK":
-            self.add_log("info", f"[UART 수신] {message.raw} → AI 판정 실행 (STM32 버튼 0)")
-            self.request_ai_judgement()
-        elif cmd == "PAUSE":
-            self.add_log("warning", f"[UART 수신] {message.raw} → 공정 일시정지 (STM32 버튼 1)")
-            self.work_controller.pause()
-        elif cmd == "RESUME":
-            self.add_log("info", f"[UART 수신] {message.raw} → 공정 작업 재개 (STM32 버튼 1)")
-            self.work_controller.resume()
-        elif cmd == "RESET":
-            self.add_log("error", f"[UART 수신] {message.raw} → 공정 초기화 / 수동 불량 등록 (STM32 버튼 2)")
-            self.work_controller.register_defect()
-        elif cmd == "START":
-            self.add_log("info", f"[UART 수신] {message.raw} → 공정 시작")
-            self.on_start_work_clicked()
-        elif cmd == "PASS":
-            self.add_log("success", f"[UART 수신] {message.raw} → 판정: PASS")
-            self.work_controller.apply_judgement("PASS", "UART 판정: PASS")
-        elif cmd == "FAIL":
-            self.add_log("error", f"[UART 수신] {message.raw} → 판정: FAIL")
-            self.work_controller.apply_judgement("FAIL", "UART 판정: FAIL")
+        # STM32 → Qt 수신 명령 디스패치 테이블
+        _handlers = {
+            "CHECK":  self._on_uart_check,
+            "PAUSE":  self._on_uart_pause,
+            "RESUME": self._on_uart_resume,
+            "RESET":  self._on_uart_reset,
+            "START":  self._on_uart_start,
+            "PASS":   self._on_uart_pass,
+            "FAIL":   self._on_uart_fail,
+        }
+        handler = _handlers.get(cmd)
+        if handler:
+            handler(message)
         elif cmd.isdigit() or cmd in ("INIT!!!", "BUZZER TEST!!"):
-            # STM32 부저 타이머 디버그 카운트(0, 1, 2...) 및 테스트 출력 무시
+            # STM32 디버그 출력 (숫자 카운터, 테스트 메시지) 무시
             return
         else:
             self.add_log("warning", f"[UART 수신] {message.raw} (미등록 명령)")
+
+    def _on_uart_check(self, message) -> None:
+        self.add_log("info", f"[UART 수신] {message.raw} → AI 판정 실행 (STM32 버튼 0)")
+        self.request_ai_judgement()
+
+    def _on_uart_pause(self, message) -> None:
+        self.add_log("warning", f"[UART 수신] {message.raw} → 공정 일시정지 (STM32 버튼 1)")
+        self.work_controller.pause()
+
+    def _on_uart_resume(self, message) -> None:
+        self.add_log("info", f"[UART 수신] {message.raw} → 공정 작업 재개 (STM32 버튼 1)")
+        self.work_controller.resume()
+
+    def _on_uart_reset(self, message) -> None:
+        self.add_log("error", f"[UART 수신] {message.raw} → 공정 초기화 / 수동 불량 등록 (STM32 버튼 2)")
+        self.work_controller.register_defect()
+
+    def _on_uart_start(self, message) -> None:
+        self.add_log("info", f"[UART 수신] {message.raw} → 공정 시작")
+        self.on_start_work_clicked()
+
+    def _on_uart_pass(self, message) -> None:
+        self.add_log("success", f"[UART 수신] {message.raw} → 판정: PASS")
+        self.work_controller.apply_judgement("PASS", "UART 판정: PASS")
+
+    def _on_uart_fail(self, message) -> None:
+        self.add_log("error", f"[UART 수신] {message.raw} → 판정: FAIL")
+        self.work_controller.apply_judgement("FAIL", "UART 판정: FAIL")
 
     def handle_tcp_message(self, raw_message: str, address: str) -> None:
         """Monitoring PC 호출 메시지를 UI Main Thread에서 처리합니다."""
@@ -890,27 +857,9 @@ class WorkerWindow(QMainWindow):
 
     # ── 서버 연결 감시 ───────────────────────────────────────────────────────
 
-    def handle_monitoring_event_status(self, message: str, ok: bool) -> None:
+    def _on_monitoring_event_status(self, message: str, ok: bool) -> None:
         """작업상태 전송 실패 시 서버 연결 끊김으로 처리합니다."""
         if not ok:
-            self.handle_server_disconnected(message)
-
-    def _auto_check_server(self) -> None:
-        """주기적으로 백그라운드에서 관제 서버 연결 상태를 점검합니다."""
-        if config.TEST_MODE or self._is_terminating:
-            return
-        if self.server_check_thread is not None and self.server_check_thread.isRunning():
-            return
-        self.server_check_thread = ServerCheckThread(timeout=1.0, parent=self)
-        self.server_check_thread.check_finished.connect(self._on_server_check_finished)
-        self.server_check_thread.finished.connect(self._clear_server_check_thread)
-        self.server_check_thread.start()
-
-    def _clear_server_check_thread(self) -> None:
-        self.server_check_thread = None
-
-    def _on_server_check_finished(self, ok: bool, message: str) -> None:
-        if not self._is_terminating and not ok:
             self.handle_server_disconnected(message)
 
     def handle_server_disconnected(self, reason: str = "") -> None:
@@ -918,7 +867,7 @@ class WorkerWindow(QMainWindow):
         if self._is_terminating:
             return
         self._is_terminating = True
-        self.server_monitor_timer.stop()
+        self.server_monitor.set_terminating()
         self.add_log("error", f"서버 연결 끊김: {reason}. 프로그램을 종료합니다.")
         info_text = (
             "관제 PC(모니터링 서버)와의 연결이 끊어져 프로그램을 종료합니다.\n"
@@ -951,11 +900,9 @@ class WorkerWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """창 종료 시 STM32에 프로그램 종료 명령 전송 및 모든 Device Thread를 안전하게 정리합니다."""
-        self._send_exit_to_stm32()
+        self.stm.send_exit()
         self.clock_timer.stop()
-        self.server_monitor_timer.stop()
-        if self.server_check_thread is not None and self.server_check_thread.isRunning():
-            self.server_check_thread.wait(1000)
+        self.server_monitor.stop()
         if self.product_fetch_thread is not None and self.product_fetch_thread.isRunning():
             self.product_fetch_thread.wait(1000)
         self.monitoring_event_thread.logout_and_stop()
