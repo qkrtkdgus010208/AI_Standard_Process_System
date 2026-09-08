@@ -10,9 +10,15 @@
 |---|---|
 | `main.py` | 실행, DB 초기화, 로그인↔관리자 화면 전환, Gateway 시작·종료 |
 | `config.py` | DB 경로, TCP 주소·포트·동시 처리 수·제한시간, 샘플 데이터 설정 |
-| `database_manager.py` | 스키마·마이그레이션, 인증, 직원/제품 CRUD, 작업 상태·이력 저장/조회 |
+| `database_manager.py` | DB 연결·트랜잭션, 기존 공개 API를 저장소로 연결하는 facade, 상태 저장 진입점 |
+| `database_schema.py` | DB 테이블 생성, 인덱스, 기존 DB 품질 로그·KST·event ID 마이그레이션 |
+| `employee_repository.py` | 관리자/작업자 인증, 직원 현황·계정 생성·말소 |
+| `product_repository.py` | 제품 CRUD, STEP 기준 이미지 메타데이터, 품질 집계·초기화 |
+| `work_history_repository.py` | 출퇴근 세션, 미완료 작업 복원, 제품·STEP·불량·일시정지 이력 조회 |
+| `state_types.py` | Gateway 세션과 작업자 상태 dict의 `TypedDict` 계약 |
 | `login_window.py` | 관리자 로그인 UI와 `verify_admin_login()` 호출 |
-| `admin_window.py` | 직원 현황, 제품 관리, 작업자 계정 등록 |
+| `admin_window.py` | 직원·제품 화면 표시, Dialog와 서비스 호출, 작업자 계정 UI |
+| `product_service.py` | 제품 CRUD와 STEP 이미지 저장·정리 절차 조합 및 실패 보상 |
 | `employee_detail_dialog.py` | 직원별 로그인/제품/불량/일시정지 이력, STEP 상세 모달 연결, 관리자 메시지 전송 |
 | `step_history_dialog.py` | 선택한 제품 작업 회차의 STEP 작업시간 모달 |
 | `product_dialog.py` | 제품번호·제품명·총 STEP 및 STEP별 기준 이미지 입력과 검증 |
@@ -23,7 +29,9 @@
 | `tcp_client.py` | 로그인 Jetson IP 연결 관리와 관리자 메시지 전송 |
 | `theme.py` | 전역 PyQt 테마와 카드 그림자 |
 | `sample_data.py`, `mock_tcp_server.py` | 샘플 DB 생성, 포트 5000 수신 확인용 개발 도구 |
-| `test_state_persistence.py` | 상태 저장·집계·복원·동적 IP·제품 검증·KST 마이그레이션 회귀 테스트 |
+| `test_state_persistence.py` | 상태 저장·집계·복원·Gateway·제품·마이그레이션 회귀 테스트 |
+| `test_product_service.py` | 제품 서비스 정상 처리와 이미지 실패 보상 단위 테스트 |
+| `test_database_facade.py` | DatabaseManager 호환 facade와 샘플 데이터 회귀 테스트 |
 | `worker_state_recorder.py` | 작업자 상태 검증·중복 판정·제품/STEP/판정/정지/불량 이력의 트랜잭션 저장 |
 
 기능 변경 시 UI 파일과 함께 위 표의 데이터/통신 파일을 확인한다. 특히 상태 처리나
@@ -32,9 +40,10 @@ DB 스키마는 `DatabaseManager.record_worker_state()`와 회귀 테스트를 �
 ## 핵심 흐름과 계약
 
 ```text
-main → LoginWindow/AdminWindow → DatabaseManager → factory.db
+main → LoginWindow/AdminWindow → DatabaseManager facade → Repository → factory.db
+AdminWindow → ProductService → DatabaseManager/step_guide_storage
 Admin/EmployeeDetail → TcpClient → 작업자 PC:5000
-작업자 PC → MonitoringGatewayThread:5001 → DatabaseManager
+작업자 PC → MonitoringGatewayThread:5001 → DatabaseManager → WorkerStateRecorder
 ```
 
 - 관리자→작업자는 UTF-8 한 줄
@@ -80,7 +89,7 @@ Admin/EmployeeDetail → TcpClient → 작업자 PC:5000
 ## 검증과 문서 유지
 
 ```powershell
-python -m unittest test_state_persistence.py
+python -m unittest discover -p "test*.py"
 python main.py
 ```
 

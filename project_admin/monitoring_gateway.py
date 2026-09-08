@@ -11,6 +11,12 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 import config
 from database_manager import DatabaseManager
+from state_types import (
+    EmployeeIdentity,
+    GatewaySession,
+    StateRequest,
+    WorkerStateInput,
+)
 from tcp_client import WorkerEndpointRegistry
 from step_guide_storage import resolve_guide_path
 
@@ -39,7 +45,7 @@ class MonitoringGatewayThread(QThread):
         self.max_clients = max(1, int(max_clients))
         self._running = False
         self._server_socket = None
-        self._sessions = {}
+        self._sessions: dict[str, GatewaySession] = {}
         self._sessions_lock = RLock()
         self._employee_locks = {}
         self.endpoint_registry = endpoint_registry or WorkerEndpointRegistry()
@@ -49,7 +55,9 @@ class MonitoringGatewayThread(QThread):
         with self._sessions_lock:
             return self._employee_locks.setdefault(employee_id, Lock())
 
-    def _session_matches(self, token: str, employee: dict, client_ip: str) -> bool:
+    def _session_matches(
+        self, token: str, employee: EmployeeIdentity, client_ip: str
+    ) -> bool:
         """현재 token이 같은 직원·IP에 아직 귀속되어 있는지 확인합니다."""
         with self._sessions_lock:
             session = self._sessions.get(token)
@@ -227,10 +235,11 @@ class MonitoringGatewayThread(QThread):
         }
 
     def _handle_state_request(
-        self, request: dict, employee: dict, token: str, client_ip: str
+        self, request: StateRequest, employee: EmployeeIdentity,
+        token: str, client_ip: str,
     ) -> dict:
         """수신된 작업자 공정 상태를 DB에 저장하고 모니터링 이벤트로 통지합니다."""
-        state = {
+        state: WorkerStateInput = {
             "employee_id": employee["employee_id"],
             "name": employee["name"],
             "product_id": str(request.get("product_id", "")),
@@ -257,7 +266,7 @@ class MonitoringGatewayThread(QThread):
         return {"ok": True}
 
     def _handle_logout_request(
-        self, employee: dict, token: str, client_ip: str
+        self, employee: EmployeeIdentity, token: str, client_ip: str
     ) -> dict:
         """작업 세션을 종료하고 토큰을 해제합니다."""
         with self._employee_lock(employee["employee_id"]):

@@ -10,6 +10,8 @@ import sqlite3
 import uuid
 from typing import Optional
 
+from state_types import WorkerStateInput
+
 
 class WorkerStateRecorder:
     """작업자 공정 상태 이벤트를 수신하여 SQLite 트랜잭션 내에 단계별로 반영하는 서비스입니다."""
@@ -17,7 +19,7 @@ class WorkerStateRecorder:
     def __init__(self, connection: sqlite3.Connection):
         self.connection = connection
 
-    def record(self, state_data: dict) -> Optional[int]:
+    def record(self, state_data: WorkerStateInput) -> Optional[int]:
         """수신 상태를 검증 및 보존하고 공정·STEP·Pause·판정·불량 이력에 원자적으로 반영합니다."""
         (
             employee_id, product_id, product_name, state,
@@ -86,7 +88,7 @@ class WorkerStateRecorder:
 
     # ── 내부 단계별 처리 메서드 ──────────────────────────────────────────────
 
-    def _validate_and_normalize(self, state_data: dict) -> tuple:
+    def _validate_and_normalize(self, state_data: WorkerStateInput) -> tuple:
         """입력 딕셔너리의 필드 유효성을 검사하고 정규화된 튜플을 반환합니다."""
         employee_id = str(state_data.get("employee_id", "")).strip()
         product_id = str(state_data.get("product_id", "")).strip()
