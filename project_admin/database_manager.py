@@ -175,6 +175,7 @@ class DatabaseManager:
                     event TEXT NOT NULL DEFAULT '',
                     defect_type TEXT NOT NULL DEFAULT '',
                     detail TEXT NOT NULL DEFAULT '',
+                    client_event_id TEXT,
                     received_at DATETIME NOT NULL DEFAULT (datetime('now', '+9 hours')),
                     FOREIGN KEY (employee_id) REFERENCES employees(employee_id),
                     FOREIGN KEY (product_id) REFERENCES products(product_id)
@@ -222,6 +223,10 @@ class DatabaseManager:
                         f"ALTER TABLE worker_state_events "
                         f"ADD COLUMN {column_name} TEXT NOT NULL DEFAULT ''"
                     )
+            if "client_event_id" not in worker_event_columns:
+                connection.execute(
+                    "ALTER TABLE worker_state_events ADD COLUMN client_event_id TEXT"
+                )
             defect_log_columns = {
                 row["name"] for row in connection.execute(
                     "PRAGMA table_info(defect_logs)"
@@ -248,6 +253,9 @@ class DatabaseManager:
                 DROP INDEX IF EXISTS idx_defect_logs_step_time;
                 CREATE INDEX IF NOT EXISTS idx_judgement_logs_step_time
                     ON judgement_logs(step_run_id, judged_at);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_state_events_client_event
+                    ON worker_state_events(employee_id, client_event_id)
+                    WHERE client_event_id IS NOT NULL;
                 """
             )
             connection.execute(
@@ -510,6 +518,9 @@ class DatabaseManager:
     def record_worker_state(self, state_data: dict) -> Optional[int]:
         """수신 상태를 보존하고 공정·STEP·Pause 이력에 원자적으로 반영합니다 (WorkerStateRecorder 위임)."""
         with self.connect() as connection:
+            # 중복 판정 SELECT부터 쓰기 완료까지 직렬화해 동시 요청이 같은
+            # 최신 이벤트를 기준으로 각각 저장하는 경쟁 조건을 막습니다.
+            connection.execute("BEGIN IMMEDIATE")
             recorder = WorkerStateRecorder(connection)
             return recorder.record(state_data)
 

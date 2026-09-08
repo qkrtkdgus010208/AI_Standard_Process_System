@@ -7,6 +7,7 @@ DatabaseManager의 record_worker_state 책임을 분리하여 단일 책임 원�
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from typing import Optional
 
 
@@ -21,7 +22,7 @@ class WorkerStateRecorder:
         (
             employee_id, product_id, product_name, state,
             last_result, event_name, defect_type, detail,
-            current_step, total_steps,
+            current_step, total_steps, client_event_id,
         ) = self._validate_and_normalize(state_data)
 
         # 1. DB 엔티티 유효성 검증 (작업자 역할, 제품 등록 여부, STEP 범위)
@@ -37,7 +38,9 @@ class WorkerStateRecorder:
         )
 
         # 2. worker_state_events 테이블에 이벤트 원문 기록 (중복 억제 포함)
-        event_id = self._record_worker_event(event_values, employee_id, last_result)
+        event_id = self._record_worker_event(
+            event_values, employee_id, last_result, client_event_id
+        )
         if event_id is None:
             return None
 
@@ -93,6 +96,19 @@ class WorkerStateRecorder:
         event_name = str(state_data.get("event", "")).strip().lower()
         defect_type = str(state_data.get("defect_type", "")).strip().lower()
         detail = str(state_data.get("detail", "")).strip()
+        raw_client_event_id = state_data.get("client_event_id")
+        client_event_id = None
+        if raw_client_event_id is not None:
+            if not isinstance(raw_client_event_id, str) or not raw_client_event_id.strip():
+                raise ValueError("event_id는 UUID 문자열이어야 합니다.")
+            candidate = raw_client_event_id.strip()
+            try:
+                normalized_event_id = str(uuid.UUID(candidate))
+            except (ValueError, AttributeError) as error:
+                raise ValueError("event_id는 UUID 문자열이어야 합니다.") from error
+            if len(candidate) != 36 or candidate.lower() != normalized_event_id:
+                raise ValueError("event_id는 UUID 문자열이어야 합니다.")
+            client_event_id = normalized_event_id
 
         try:
             current_step = int(state_data.get("current_step", 0))
@@ -114,7 +130,7 @@ class WorkerStateRecorder:
         return (
             employee_id, product_id, product_name, state,
             last_result, event_name, defect_type, detail,
-            current_step, total_steps,
+            current_step, total_steps, client_event_id,
         )
 
     def _verify_db_entities(
@@ -153,29 +169,43 @@ class WorkerStateRecorder:
         return product
 
     def _record_worker_event(
-        self, event_values: tuple, employee_id: str, last_result: str
+        self, event_values: tuple, employee_id: str, last_result: str,
+        client_event_id: Optional[str],
     ) -> Optional[int]:
         """worker_state_events 테이블에 이벤트를 삽입합니다 (동일 PASS/상태 중복 억제)."""
-        latest_event = self.connection.execute(
-            """SELECT employee_id, product_id, product_name, state,
-                      current_step, total_steps, last_result, event, defect_type, detail
-               FROM worker_state_events
-               WHERE employee_id = ?
-               ORDER BY state_event_id DESC LIMIT 1""",
-            (employee_id,),
-        ).fetchone()
+        if client_event_id is not None:
+            existing_event = self.connection.execute(
+                """SELECT employee_id, product_id, product_name, state,
+                          current_step, total_steps, last_result, event, defect_type, detail
+                   FROM worker_state_events
+                   WHERE employee_id = ? AND client_event_id = ?""",
+                (employee_id, client_event_id),
+            ).fetchone()
+            if existing_event is not None:
+                if tuple(existing_event) != event_values:
+                    raise ValueError("같은 event_id에 서로 다른 상태가 포함되어 있습니다.")
+                return None
+        else:
+            latest_event = self.connection.execute(
+                """SELECT employee_id, product_id, product_name, state,
+                          current_step, total_steps, last_result, event, defect_type, detail
+                   FROM worker_state_events
+                   WHERE employee_id = ?
+                   ORDER BY state_event_id DESC LIMIT 1""",
+                (employee_id,),
+            ).fetchone()
 
-        if (latest_event is not None and tuple(latest_event) == event_values
-                and last_result != "fail"):
-            return None
+            if (latest_event is not None and tuple(latest_event) == event_values
+                    and last_result != "fail"):
+                return None
 
         cursor = self.connection.execute(
             """INSERT INTO worker_state_events(
                    employee_id, product_id, product_name, state,
                    current_step, total_steps, last_result, event, defect_type,
-                   detail, received_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+9 hours'))""",
-            event_values,
+                   detail, client_event_id, received_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+9 hours'))""",
+            (*event_values, client_event_id),
         )
         return int(cursor.lastrowid)
 

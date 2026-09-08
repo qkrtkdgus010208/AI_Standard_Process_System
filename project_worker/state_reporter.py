@@ -5,6 +5,7 @@
 """
 
 import queue
+import uuid
 from typing import Any, Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -94,6 +95,7 @@ class MonitoringEventThread(QThread):
         self._queue.put({
             "type": "state",
             "token": self.session.token,
+            "event_id": str(uuid.uuid4()),
             "product_id": state.get("product_id", ""),
             "product_name": state.get("product_name", ""),
             "state": state.get("state", ""),

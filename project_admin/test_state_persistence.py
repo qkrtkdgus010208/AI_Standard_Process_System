@@ -1,5 +1,8 @@
 import base64
+import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -430,6 +433,387 @@ class WorkerStatePersistenceTest(unittest.TestCase):
         }, "10.10.15.52")
         self.assertFalse(stale["ok"])
         self.assertTrue(current["ok"])
+
+    def test_stale_logout_cannot_close_current_work_session(self):
+        gateway = MonitoringGatewayThread(self.database, host="127.0.0.1", port=0)
+        first = gateway._process_request({
+            "type": "auth", "employee_id": "1001", "password": "worker1234",
+        }, "10.10.15.51")
+        second = gateway._process_request({
+            "type": "auth", "employee_id": "1001", "password": "worker1234",
+        }, "10.10.15.52")
+
+        stale_logout = gateway._process_request({
+            "type": "logout", "token": first["token"],
+        }, "10.10.15.51")
+
+        self.assertFalse(stale_logout["ok"])
+        self.assertTrue(gateway._process_request({
+            "type": "products", "token": second["token"],
+        }, "10.10.15.52")["ok"])
+        with self.database.connect() as connection:
+            session = connection.execute(
+                """SELECT logout_at FROM work_sessions
+                   WHERE employee_id = ? AND logout_at IS NULL""",
+                ("1001",),
+            ).fetchone()
+        self.assertIsNotNone(session)
+
+    def test_state_rechecks_token_after_previous_login_is_displaced(self):
+        gateway = MonitoringGatewayThread(self.database, host="127.0.0.1", port=0)
+        first = gateway._process_request({
+            "type": "auth", "employee_id": "1001", "password": "worker1234",
+        }, "10.10.15.51")
+        gateway._process_request({
+            "type": "auth", "employee_id": "1001", "password": "worker1234",
+        }, "10.10.15.52")
+
+        stale_state = gateway._process_request({
+            "type": "state", "token": first["token"],
+            "product_id": "P001", "product_name": "스마트 액추에이터 A",
+            "state": "running", "current_step": 1, "total_steps": 5,
+        }, "10.10.15.51")
+
+        self.assertFalse(stale_state["ok"])
+        with self.database.connect() as connection:
+            event_count = connection.execute(
+                "SELECT COUNT(*) FROM worker_state_events"
+            ).fetchone()[0]
+        self.assertEqual(event_count, 0)
+
+    def test_same_employee_state_writes_are_serialized(self):
+        gateway = MonitoringGatewayThread(self.database, host="127.0.0.1", port=0)
+        login = gateway._process_request({
+            "type": "auth", "employee_id": "1001", "password": "worker1234",
+        }, "10.10.15.51")
+        active = 0
+        maximum = 0
+        counter_lock = threading.Lock()
+        original_record = self.database.record_worker_state
+
+        def tracked_record(state):
+            nonlocal active, maximum
+            with counter_lock:
+                active += 1
+                maximum = max(maximum, active)
+            try:
+                time.sleep(0.03)
+                return original_record(state)
+            finally:
+                with counter_lock:
+                    active -= 1
+
+        self.database.record_worker_state = tracked_record
+        requests = [
+            {
+                "type": "state", "token": login["token"],
+                "product_id": "P001", "product_name": "스마트 액추에이터 A",
+                "state": "running", "current_step": step, "total_steps": 5,
+            }
+            for step in (1, 2)
+        ]
+        results = []
+        threads = [threading.Thread(
+            target=lambda request=request: results.append(
+                gateway._process_request(request, "10.10.15.51")
+            )
+        ) for request in requests]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(maximum, 1)
+        self.assertEqual(len(results), 2)
+        self.assertTrue(all(result["ok"] for result in results))
+
+    def test_concurrent_database_state_writes_do_not_duplicate_event(self):
+        state = {
+            "employee_id": "1001",
+            "name": "홍길동",
+            "product_id": "P001",
+            "product_name": "스마트 액추에이터 A",
+            "state": "running",
+            "current_step": 1,
+            "total_steps": 5,
+            "last_result": "waiting",
+            "event": "",
+            "defect_type": "",
+            "detail": "",
+        }
+        start = threading.Barrier(3)
+        results = []
+        errors = []
+
+        def record_state():
+            start.wait()
+            try:
+                results.append(self.database.record_worker_state(state))
+            except Exception as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=record_state) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        start.wait()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(sum(result is not None for result in results), 1)
+        with self.database.connect() as connection:
+            event_count = connection.execute(
+                "SELECT COUNT(*) FROM worker_state_events"
+            ).fetchone()[0]
+        self.assertEqual(event_count, 1)
+
+    def test_gateway_event_id_makes_fail_retry_idempotent(self):
+        gateway = MonitoringGatewayThread(self.database, host="127.0.0.1", port=0)
+        login = gateway._process_request({
+            "type": "auth", "employee_id": "1001", "password": "worker1234",
+        }, "10.10.15.51")
+        request = {
+            "type": "state",
+            "token": login["token"],
+            "event_id": "11111111-1111-4111-8111-111111111111",
+            "product_id": "P001",
+            "product_name": "스마트 액추에이터 A",
+            "state": "running",
+            "current_step": 1,
+            "total_steps": 5,
+            "last_result": "fail",
+            "event": "ai_fail",
+        }
+
+        self.assertTrue(gateway._process_request(request, "10.10.15.51")["ok"])
+        self.assertTrue(gateway._process_request(request, "10.10.15.51")["ok"])
+
+        with self.database.connect() as connection:
+            event_count = connection.execute(
+                "SELECT COUNT(*) FROM worker_state_events WHERE client_event_id = ?",
+                (request["event_id"],),
+            ).fetchone()[0]
+            judgement_count = connection.execute(
+                "SELECT COUNT(*) FROM judgement_logs WHERE result = 'fail'"
+            ).fetchone()[0]
+        self.assertEqual(event_count, 1)
+        self.assertEqual(judgement_count, 1)
+
+    def test_different_event_ids_keep_separate_real_failures(self):
+        base = {
+            "employee_id": "1001",
+            "product_id": "P001",
+            "product_name": "스마트 액추에이터 A",
+            "state": "running",
+            "current_step": 1,
+            "total_steps": 5,
+            "last_result": "fail",
+            "event": "ai_fail",
+        }
+        self.database.record_worker_state({
+            **base, "client_event_id": "22222222-2222-4222-8222-222222222222",
+        })
+        self.database.record_worker_state({
+            **base, "client_event_id": "33333333-3333-4333-8333-333333333333",
+        })
+
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM worker_state_events"
+            ).fetchone()[0], 2)
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM judgement_logs WHERE result = 'fail'"
+            ).fetchone()[0], 2)
+
+    def test_event_id_retry_after_another_event_is_still_ignored(self):
+        first = {
+            "employee_id": "1001",
+            "product_id": "P001",
+            "product_name": "스마트 액추에이터 A",
+            "state": "running",
+            "current_step": 1,
+            "total_steps": 5,
+            "last_result": "fail",
+            "event": "ai_fail",
+            "client_event_id": "66666666-6666-4666-8666-666666666666",
+        }
+        second = {
+            **first,
+            "current_step": 2,
+            "last_result": "waiting",
+            "event": "step_pass",
+            "client_event_id": "77777777-7777-4777-8777-777777777777",
+        }
+        self.database.record_worker_state(first)
+        self.database.record_worker_state(second)
+
+        self.assertIsNone(self.database.record_worker_state(first))
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM worker_state_events"
+            ).fetchone()[0], 2)
+
+    def test_same_event_id_is_independent_for_each_employee(self):
+        self.database.create_worker("1002", "김작업", "worker5678")
+        event_id = "88888888-8888-4888-8888-888888888888"
+        base = {
+            "product_id": "P001",
+            "product_name": "스마트 액추에이터 A",
+            "state": "running",
+            "current_step": 1,
+            "total_steps": 5,
+            "last_result": "waiting",
+            "client_event_id": event_id,
+        }
+        self.database.record_worker_state({**base, "employee_id": "1001"})
+        self.database.record_worker_state({**base, "employee_id": "1002"})
+
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM worker_state_events WHERE client_event_id = ?",
+                (event_id,),
+            ).fetchone()[0], 2)
+
+    def test_concurrent_same_event_id_is_processed_once(self):
+        state = {
+            "employee_id": "1001",
+            "product_id": "P001",
+            "product_name": "스마트 액추에이터 A",
+            "state": "running",
+            "current_step": 1,
+            "total_steps": 5,
+            "last_result": "fail",
+            "event": "ai_fail",
+            "client_event_id": "99999999-9999-4999-8999-999999999999",
+        }
+        start = threading.Barrier(3)
+        results = []
+        errors = []
+
+        def record_state():
+            start.wait()
+            try:
+                results.append(self.database.record_worker_state(state))
+            except Exception as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=record_state) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        start.wait()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(sum(result is not None for result in results), 1)
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM judgement_logs WHERE result = 'fail'"
+            ).fetchone()[0], 1)
+
+    def test_reused_event_id_with_different_payload_is_rejected(self):
+        base = {
+            "employee_id": "1001",
+            "product_id": "P001",
+            "product_name": "스마트 액추에이터 A",
+            "state": "running",
+            "current_step": 1,
+            "total_steps": 5,
+            "last_result": "fail",
+            "event": "ai_fail",
+            "client_event_id": "44444444-4444-4444-8444-444444444444",
+        }
+        self.database.record_worker_state(base)
+
+        with self.assertRaisesRegex(ValueError, "같은 event_id"):
+            self.database.record_worker_state({**base, "detail": "다른 검사 결과"})
+
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM worker_state_events"
+            ).fetchone()[0], 1)
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM judgement_logs"
+            ).fetchone()[0], 1)
+
+    def test_complete_event_retry_does_not_increase_production_count(self):
+        complete = {
+            "employee_id": "1001",
+            "product_id": "P001",
+            "product_name": "스마트 액추에이터 A",
+            "state": "complete",
+            "current_step": 5,
+            "total_steps": 5,
+            "last_result": "pass",
+            "event": "complete",
+            "client_event_id": "55555555-5555-4555-8555-555555555555",
+        }
+        first = self.database.record_worker_state(complete)
+        retry = self.database.record_worker_state(complete)
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(retry)
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM product_runs WHERE result = 'pass'"
+            ).fetchone()[0], 1)
+
+    def test_invalid_event_id_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "UUID"):
+            self.database.record_worker_state({
+                "employee_id": "1001",
+                "product_id": "P001",
+                "product_name": "스마트 액추에이터 A",
+                "state": "running",
+                "current_step": 1,
+                "total_steps": 5,
+                "last_result": "waiting",
+                "client_event_id": "not-a-uuid",
+            })
+
+    def test_legacy_database_adds_client_event_id_without_losing_events(self):
+        legacy_path = Path(self.temporary_directory.name) / "legacy_event_id.db"
+        connection = sqlite3.connect(legacy_path)
+        connection.execute(
+            """CREATE TABLE worker_state_events (
+                   state_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   employee_id TEXT NOT NULL,
+                   product_id TEXT NOT NULL,
+                   product_name TEXT NOT NULL,
+                   state TEXT NOT NULL,
+                   current_step INTEGER NOT NULL,
+                   total_steps INTEGER NOT NULL,
+                   last_result TEXT NOT NULL,
+                   event TEXT NOT NULL DEFAULT '',
+                   defect_type TEXT NOT NULL DEFAULT '',
+                   detail TEXT NOT NULL DEFAULT '',
+                   received_at DATETIME NOT NULL
+               )"""
+        )
+        connection.execute(
+            """INSERT INTO worker_state_events(
+                   employee_id, product_id, product_name, state, current_step,
+                   total_steps, last_result, received_at
+               ) VALUES ('1001', 'P001', '기존 제품', 'idle', 0, 5, 'waiting',
+                         '2026-09-08 09:00:00')"""
+        )
+        connection.commit()
+        connection.close()
+
+        legacy_database = DatabaseManager(legacy_path)
+        legacy_database.initialize_database()
+        with legacy_database.connect() as connection:
+            columns = {
+                row["name"] for row in connection.execute(
+                    "PRAGMA table_info(worker_state_events)"
+                ).fetchall()
+            }
+            existing = connection.execute(
+                "SELECT client_event_id FROM worker_state_events"
+            ).fetchone()
+
+        self.assertIn("client_event_id", columns)
+        self.assertIsNone(existing["client_event_id"])
 
     def test_unknown_product_is_rejected_without_partial_event(self):
         with self.assertRaisesRegex(ValueError, "등록되지 않은 제품"):

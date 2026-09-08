@@ -42,6 +42,9 @@ Admin/EmployeeDetail → TcpClient → 작업자 PC:5000
 - 작업자→관리자는 UTF-8 JSON 한 줄 요청/응답이며 요청 종류는 `auth`,
   `products`/`get_products`, `step_guide`, `state`, `logout`이다. `step_guide`는 현재
   제품·STEP 이미지 한 장을 Base64로 반환하며 작업자는 최대 5MB 응답을 수신한다.
+- 새 작업자의 `state` 요청은 논리 이벤트마다 UUID 형식 `event_id`를 보내며 재전송 시
+  같은 값을 유지한다. 관리자는 직원번호와 `event_id` 조합으로 중복 집계를 막고,
+  `event_id`가 없는 구버전 요청은 기존 중복 판정 방식으로 처리한다.
 - `auth` 성공 응답은 미완료 제품 작업이 있으면 제품·현재 STEP·상태·최근 판정을
   `work_state`에 담고, 이어갈 작업이 없으면 `work_state: null`을 반환한다.
 - Gateway는 로그인 TCP 연결의 실제 IP를 직원·Token과 메모리에서 연결한다. 관리자 메시지는
@@ -49,7 +52,8 @@ Admin/EmployeeDetail → TcpClient → 작업자 PC:5000
   제거한다. Token 요청은 로그인 때와 동일한 IP에서만 허용한다.
 - `auth` 외 요청은 메모리 Token이 필요하고 재시작 시 만료된다. 상태의 직원 정보는
   요청값이 아니라 Token 소유자 정보로 강제한다.
-- 미등록 `product_id`는 기록 전에 거부한다. 연속으로 완전히 같은 상태는 중복 저장하지 않는다.
+- 미등록 `product_id`는 기록 전에 거부한다. `event_id`가 없는 요청은 연속으로 완전히
+  같은 상태를 중복 저장하지 않으며, 같은 `event_id`에 다른 내용이 오면 거부한다.
 - 계정 말소는 이력을 삭제하지 않고 role과 비밀번호를 폐기하며 열린 출근 기록을 종료한다.
 - 직원 상세의 근무시간은 로그인부터 로그아웃까지의 경과시간으로 계산해 점심시간을 포함하며,
   완료된 기록은 9시간 기준으로 정상 근무 또는 시간 미달을 표시한다.
@@ -59,7 +63,8 @@ Admin/EmployeeDetail → TcpClient → 작업자 PC:5000
   `products → product_step_guides`에 저장한다.
 - 주요 DB 관계는 `employees → work_sessions/product_runs`,
   `products → product_runs`, `product_runs → step_runs → pause_logs`이며
-  불량은 `step_runs → defect_logs`, 원본 상태는 `worker_state_events`에 저장한다.
+  불량은 `step_runs → defect_logs`, 원본 상태와 작업자 이벤트 UUID는
+  `worker_state_events`에 저장한다.
 - 검사 PASS/FAIL은 `step_runs → judgement_logs`에 판정 건별로 저장하고 STEP별 FAIL률을
   집계한다. 작업자의 `event=step_pass`는 `last_result=waiting`이어도 직전 STEP의 PASS로
   저장한다.
@@ -136,3 +141,45 @@ Use a second worker only for a clearly independent task.
 Workers must not edit the same files concurrently.
 
 The main agent makes the final completion judgment.
+
+### Model escalation
+
+The main agent normally handles the task using its current model.
+
+Use `luna_worker` for clearly bounded, repetitive, or execution-heavy work
+when delegation is worth the coordination overhead.
+
+Escalate difficult reasoning to `astra_advisor` only when materially stronger
+reasoning is likely to improve correctness.
+
+Good reasons to use `astra_advisor` include:
+- the root cause remains unclear after normal investigation
+- multiple major modules or system boundaries interact in a non-obvious way
+- architecture choices or significant tradeoffs must be evaluated
+- authentication, authorization, or security behavior may change
+- major DB, API, or TCP contracts may need to change
+- data integrity or migration safety is at risk
+- important business rules conflict or are ambiguous
+- a previous reasonable fix failed or caused another regression
+- the main agent has substantial uncertainty about the correct solution
+
+Do not use `astra_advisor` for:
+- trivial or highly localized changes
+- routine CRUD work
+- straightforward UI changes
+- mechanical multi-file edits
+- ordinary test writing or execution
+- issues already understood well enough to implement safely
+
+Prefer the cheapest capable path:
+
+1. Main agent handles ordinary work directly.
+2. Use `luna_worker` for bounded exploration, implementation, repetition, or validation.
+3. Use `astra_advisor` when the remaining difficulty is primarily reasoning,
+   ambiguity, risk, or an important technical decision.
+
+Do not escalate merely because a task is large.
+Escalate when the hard part is judgment.
+
+After receiving advice from `astra_advisor`, the main agent owns the final
+decision, implementation plan, integration review, and completion judgment.
