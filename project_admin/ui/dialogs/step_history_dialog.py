@@ -3,8 +3,8 @@
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
-    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
+    QPushButton, QVBoxLayout,
 )
 
 from db.database_manager import DatabaseManager

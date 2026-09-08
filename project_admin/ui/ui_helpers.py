@@ -5,8 +5,8 @@
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QFrame, QHeaderView, QLabel,
-    QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QAbstractItemView, QHeaderView,
+    QTableWidget, QTableWidgetItem,
 )
 
 ROLE_DISPLAY_NAMES: dict[str, str] = {
@@ -44,29 +44,3 @@ def fill_table(table: QTableWidget, rows: list[list]) -> None:
             item.setTextAlignment(Qt.AlignCenter)
             table.setItem(row_index, column_index, item)
     table.blockSignals(False)
-
-
-def create_metric_card(
-    label_text: str,
-    initial_value: str = "0",
-    accent_color: str = "#315E91",
-) -> tuple[QFrame, QLabel]:
-    """라벨과 강조 색상 숫자 값을 가진 통계/메트릭 카드 위젯을 생성합니다."""
-    card = QFrame()
-    card.setObjectName("card")
-    layout = QVBoxLayout(card)
-    layout.setContentsMargins(16, 12, 16, 12)
-    layout.setSpacing(4)
-
-    title = QLabel(label_text)
-    title.setObjectName("mutedText")
-    title.setStyleSheet("font-size:11px;")
-
-    value_label = QLabel(initial_value)
-    value_label.setStyleSheet(
-        f"font-size:24px; font-weight:800; color:{accent_color};"
-    )
-
-    layout.addWidget(title)
-    layout.addWidget(value_label)
-    return card, value_label

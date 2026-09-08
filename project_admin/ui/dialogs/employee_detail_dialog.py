@@ -3,13 +3,12 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel,
-    QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+    QTableWidget, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from db.database_manager import DatabaseManager
-from network.tcp_client import SendResult, TcpClient, build_employee_message
+from network.tcp_client import TcpClient
 from ui.dialogs.step_history_dialog import StepHistoryDialog
 from ui.ui_helpers import ROLE_DISPLAY_NAMES, fill_table, make_read_only_table
 
@@ -86,11 +85,6 @@ class EmployeeDetailDialog(QDialog):
 
     # 공통 UI 헬퍼 위임
     _make_table = staticmethod(make_read_only_table)
-
-    @staticmethod
-    def _display(value) -> str:
-        """NULL 값을 사용자 친화적인 문자로 표시합니다."""
-        return "—" if value is None or value == "" else str(value)
 
     @staticmethod
     def _table_panel(title: str, table: QTableWidget) -> QFrame:
@@ -346,10 +340,6 @@ class EmployeeDetailDialog(QDialog):
             QMessageBox.critical(
                 self, "DB 오류", f"일시정지 조회 중 오류가 발생했습니다.\n{error}"
             )
-
-    def clear_pause_history(self) -> None:
-        """일시정지 이력을 직원의 전체 이력으로 복원합니다."""
-        self.load_pause_history()
 
     def load_step_pauses(self, step_run_id: int) -> None:
         """STEP 모달에서 선택한 STEP의 일시정지 이력을 불러옵니다."""

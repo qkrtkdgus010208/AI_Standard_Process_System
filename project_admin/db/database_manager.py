@@ -60,16 +60,6 @@ class DatabaseManager:
             DatabaseSchemaManager().initialize(connection)
 
     @staticmethod
-    def _migrate_normalized_quality_logs(connection: sqlite3.Connection) -> None:
-        """기존 호출 호환을 위한 품질 로그 마이그레이션 위임입니다."""
-        DatabaseSchemaManager.migrate_normalized_quality_logs(connection)
-
-    @staticmethod
-    def _migrate_legacy_utc_timestamps(connection: sqlite3.Connection) -> None:
-        """기존 호출 호환을 위한 KST 마이그레이션 위임입니다."""
-        DatabaseSchemaManager.migrate_legacy_utc_timestamps(connection)
-
-    @staticmethod
     def hash_password(password: str) -> str:
         """비밀번호를 PBKDF2-SHA256 형식으로 안전하게 해시합니다."""
         if not password:

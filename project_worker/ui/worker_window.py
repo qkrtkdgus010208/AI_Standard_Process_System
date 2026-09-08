@@ -787,18 +787,6 @@ class WorkerWindow(QMainWindow):
         self.stm.send_exit()
         self.logout_requested.emit()
 
-    def send_work_status_to_stm32(self, current_step: int, state: str) -> bool:
-        """서버에서 복원된 작업 상태를 STM32로 전송합니다 (StmController 위임)."""
-        return self.stm.send_step_restore(current_step, state)
-
-    def _send_exit_to_stm32(self) -> None:
-        """하위 호환성 유지용 위임 메서드"""
-        self.stm.send_exit()
-
-    def _ensure_stm32_standby(self) -> None:
-        """하위 호환성 유지용 위임 메서드"""
-        self.stm.send_standby()
-
     # ── AI 판정 ──────────────────────────────────────────────────────────────
 
     def request_ai_judgement(self) -> None:
