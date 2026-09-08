@@ -8,7 +8,7 @@ from PyQt5.QtGui import QColor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
-    QProgressBar, QPushButton, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 import config
@@ -50,6 +50,15 @@ _LOG_COLORS = {
     "error":   "#AE5050", "info":    "#526170",
 }
 _LOG_DEFAULT_COLOR = "#526170"
+
+# STEP 기준 이미지 패널 스타일 (텍스트 모드: 16px 패딩+큰 폰트 / 이미지 모드: 0px 패딩으로 패널 가득 채움)
+_GUIDE_TEXT_STYLE = (
+    "color:#3A4757; background:#F4F6F8; border:1px solid #DDE3EA; border-radius:7px; "
+    "font-size:20px; font-weight:600; padding:16px;"
+)
+_GUIDE_IMAGE_STYLE = (
+    "background:#1E293B; border:1px solid #BFC9D3; border-radius:7px; padding:0px;"
+)
 
 
 class WorkerWindow(QMainWindow):
@@ -254,6 +263,7 @@ class WorkerWindow(QMainWindow):
         camera_title.setObjectName("smallLabel")
         self.camera_view = QLabel("카메라 연결 대기 중")
         self.camera_view.setAlignment(Qt.AlignCenter)
+        self.camera_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.camera_view.setMinimumSize(360, 300)
         self.camera_view.setStyleSheet(
             "color:#C7D2DC; background:#263746; border:1px solid #BFC9D3; border-radius:7px;"
@@ -264,12 +274,12 @@ class WorkerWindow(QMainWindow):
         guide_panel = QVBoxLayout()
         self.guide_title_label = QLabel("STEP 기준 이미지")
         self.guide_title_label.setObjectName("smallLabel")
-        self.step_guide_view = QLabel("제품을 선택하면\n기준 이미지를 불러옵니다.")
+        self.step_guide_view = QLabel("작업을 시작하면\n기준 이미지가 표시됩니다.")
         self.step_guide_view.setAlignment(Qt.AlignCenter)
+        self.step_guide_view.setWordWrap(True)
+        self.step_guide_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.step_guide_view.setMinimumSize(300, 300)
-        self.step_guide_view.setStyleSheet(
-            "color:#6F7B89; background:#F4F6F8; border:1px solid #DDE3EA; border-radius:7px;"
-        )
+        self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
         guide_panel.addWidget(self.guide_title_label)
         guide_panel.addWidget(self.step_guide_view, 1)
         image_row.addLayout(camera_panel, 1)
@@ -563,7 +573,7 @@ class WorkerWindow(QMainWindow):
         self.product_id_display.setText(product.product_id)
         self.total_steps_display.setText(f"{product.total_steps} 단계")
         self._apply_work_setup()
-        self._request_step_guide(product.product_id, 1)
+        self._clear_step_guide("작업을 시작하면\n기준 이미지가 표시됩니다.")
 
     def _apply_work_setup(self) -> None:
         """선택된 제품 정보를 Controller에 적용합니다."""
@@ -574,6 +584,18 @@ class WorkerWindow(QMainWindow):
             self._current_product.product_id, self._current_product.product_name,
             self._current_product.total_steps,
         )
+
+    def _clear_step_guide(self, message: str = "작업을 시작하면\n기준 이미지가 표시됩니다.") -> None:
+        """기준 이미지를 지우고 대기 안내 문구로 초기화합니다."""
+        self._requested_guide_key = None
+        self.step_guide_view.setScaledContents(False)
+        self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
+        if self._displayed_guide_key is None and self.step_guide_view.text() == message:
+            return
+        self._displayed_guide_key = None
+        self.guide_title_label.setText("STEP 기준 이미지")
+        self.step_guide_view.clear()
+        self.step_guide_view.setText(message)
 
     def _request_step_guide(self, product_id: str, step_no: int) -> None:
         """요청된 제품·STEP 기준 이미지를 비동기로 가져옵니다."""
@@ -586,6 +608,8 @@ class WorkerWindow(QMainWindow):
         if self._guide_fetch_thread is not None and self._guide_fetch_thread.isRunning():
             return
         self.guide_title_label.setText(f"STEP {step_no} 기준 이미지")
+        self.step_guide_view.setScaledContents(False)
+        self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
         self.step_guide_view.clear()
         self.step_guide_view.setText("기준 이미지 불러오는 중…")
         thread = StepGuideFetchThread(
@@ -604,29 +628,34 @@ class WorkerWindow(QMainWindow):
         self._displayed_guide_key = key
         self.guide_title_label.setText(f"STEP {step_no} 기준 이미지")
         if not success:
+            self.step_guide_view.setScaledContents(False)
+            self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
             self.step_guide_view.clear()
             self.step_guide_view.setText("기준 이미지를\n불러오지 못했습니다.")
             self.add_log("warning", message)
             return
         if image_data is None:
+            self.step_guide_view.setScaledContents(False)
+            self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
             self.step_guide_view.clear()
             self.step_guide_view.setText("등록된 기준 이미지가\n없습니다.")
             return
         pixmap = QPixmap()
         if not pixmap.loadFromData(image_data):
+            self.step_guide_view.setScaledContents(False)
+            self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
             self.step_guide_view.clear()
             self.step_guide_view.setText("기준 이미지가\n손상되었습니다.")
             self.add_log("warning", "STEP 기준 이미지 데이터를 표시할 수 없습니다.")
             return
-        self.step_guide_view.setPixmap(
-            pixmap.scaled(
-                self.step_guide_view.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-        )
+        self.step_guide_view.setStyleSheet(_GUIDE_IMAGE_STYLE)
+        self.step_guide_view.setScaledContents(True)
+        self.step_guide_view.setPixmap(pixmap)
 
     def _on_step_guide_fetch_finished(self) -> None:
         self._guide_fetch_thread = None
         if (not self._is_terminating
+                and self._requested_guide_key is not None
                 and self._requested_guide_key != self._displayed_guide_key):
             product_id, step_no = self._requested_guide_key
             self._request_step_guide(product_id, step_no)
@@ -644,10 +673,27 @@ class WorkerWindow(QMainWindow):
         self.current_step_label.setText(
             f"STEP {state['current_step']} / {state['total_steps']}"
         )
-        if int(state.get("current_step") or 0) >= 1:
+
+        # 작업 시작 후 진행 중(running, paused)인 STEP에서만 기준 이미지를 표시합니다.
+        # 공정 완료(complete), 불량 등록(defect), 대기(idle) 등 작업이 종료/대기 상태이면 이미지를 숨깁니다.
+        is_active_work = (
+            state_name in ("running", "paused")
+            and int(state.get("current_step") or 0) >= 1
+            and state.get("last_result") != "defect"
+            and state.get("event") not in ("manual_defect", "complete")
+        )
+        if is_active_work:
             self._request_step_guide(
                 str(state.get("product_id") or ""), int(state["current_step"])
             )
+        else:
+            if state_name == "complete" or state.get("event") == "complete" or state.get("detail") == "공정 완료 후 초기화":
+                self._clear_step_guide("공정이 완료되었습니다.\n작업을 시작하면 기준 이미지가 표시됩니다.")
+            elif state.get("last_result") == "defect" or state.get("event") == "manual_defect" or state.get("detail") == "불량 등록 후 초기화":
+                self._clear_step_guide("불량 등록으로 작업이 종료되었습니다.\n작업을 시작하면 기준 이미지가 표시됩니다.")
+            else:
+                self._clear_step_guide("작업을 시작하면\n기준 이미지가 표시됩니다.")
+
         self.work_progress.setRange(0, state["total_steps"])
         if state_name == "complete":
             completed = state["total_steps"]
