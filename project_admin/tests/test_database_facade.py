@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from database_manager import DatabaseManager
+from db.database_manager import DatabaseManager
 
 
 class DatabaseFacadeTest(unittest.TestCase):

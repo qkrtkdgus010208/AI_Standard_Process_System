@@ -10,17 +10,17 @@ from PyQt5.QtWidgets import (
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from database_manager import DatabaseManager
-from employee_detail_dialog import EmployeeDetailDialog
-from product_dialog import ProductDialog
-from product_detail_dialog import ProductDetailDialog
-from product_service import ProductService
-from tcp_client import TcpClient
-from ui_helpers import ROLE_DISPLAY_NAMES
-from worker_account_dialog import (
+from db.database_manager import DatabaseManager
+from network.tcp_client import TcpClient
+from services.product_service import ProductService
+from ui.dialogs.employee_detail_dialog import EmployeeDetailDialog
+from ui.dialogs.product_detail_dialog import ProductDetailDialog
+from ui.dialogs.product_dialog import ProductDialog
+from ui.dialogs.worker_account_dialog import (
     WorkerRegistrationDialog, WorkerRevocationConfirmDialog,
     WorkerRevocationDialog,
 )
+from ui.ui_helpers import ROLE_DISPLAY_NAMES
 
 
 class AdminWindow(QMainWindow):

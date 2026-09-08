@@ -12,7 +12,7 @@ from typing import Optional, Union
 from PyQt5.QtCore import QThread, pyqtSignal
 
 import config
-from network_client import send_json_request
+from network.network_client import send_json_request
 
 
 @dataclass(frozen=True)

@@ -10,15 +10,15 @@ from threading import Lock, RLock
 from PyQt5.QtCore import QThread, pyqtSignal
 
 import config
-from database_manager import DatabaseManager
-from state_types import (
+from db.database_manager import DatabaseManager
+from models.state_types import (
     EmployeeIdentity,
     GatewaySession,
     StateRequest,
     WorkerStateInput,
 )
-from tcp_client import WorkerEndpointRegistry
-from step_guide_storage import resolve_guide_path
+from network.tcp_client import WorkerEndpointRegistry
+from services.step_guide_storage import resolve_guide_path
 
 
 WORKER_GATEWAY_HOST = config.WORKER_GATEWAY_HOST

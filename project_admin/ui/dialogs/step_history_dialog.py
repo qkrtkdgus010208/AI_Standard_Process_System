@@ -7,8 +7,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
-from database_manager import DatabaseManager
-from ui_helpers import fill_table, make_read_only_table
+from db.database_manager import DatabaseManager
+from ui.ui_helpers import fill_table, make_read_only_table
 
 
 class StepHistoryDialog(QDialog):

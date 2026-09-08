@@ -10,7 +10,7 @@ import sqlite3
 import uuid
 from typing import Optional
 
-from state_types import WorkerStateInput
+from models.state_types import WorkerStateInput
 
 
 class WorkerStateRecorder:

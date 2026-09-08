@@ -9,22 +9,28 @@ OOP 원칙(단일 책임 원칙, Facade/Controller 패턴)에 따라 명확히 �
 ```text
 project_worker/
 ├── main.py                # 프로그램 진입점 및 세션 기반 화면(로그인 ↔ 작업창) 전환
-├── worker_window.py       # 작업자 메인 GUI (카메라·STEP 기준 이미지, 상태 표시, 제어 버튼, 로그)
-├── login_window.py        # 작업자 로그인 UI
-├── work_state.py          # 공정 STEP/상태 머신 컨트롤러 (WorkStateController, WorkSnapshot)
-├── stm_controller.py      # [NEW] STM32 UART 명령 전송 캡슐화 컨트롤러 (StmController)
-├── server_monitor.py      # [NEW] 관제 PC 서버 연결 주기적 감시 모듈 (ServerMonitor)
-├── network_client.py      # [NEW] 저수준 TCP JSON 통신 및 연결 헬스체크 (send_json_request, ServerCheckThread)
-├── product_service.py     # 제품 목록과 현재 STEP 기준 이미지 비동기 조회 서비스
-├── state_reporter.py      # [NEW] 큐 기반 비동기 작업상태 이벤트 서버 전송 (MonitoringEventThread, parse_work_state_data)
-├── auth_manager.py        # 작업자 인증 세션 관리 (WorkerSession, AuthResult, AuthRequestThread)
-├── camera_manager.py      # USB/CSI/Mock 카메라 프레임 캡처 스레드 (CameraThread)
-├── ai_judge.py            # AI 추론 비동기 스레드 (AiInferenceThread, BaseJudge, MockJudge)
-├── uart_manager.py        # STM32 시리얼 통신 수신 스레드 (UartReceiverThread)
-├── tcp_server.py          # Monitoring PC 관리자 호출 수신 TCP 서버 (TcpServerThread)
-├── protocol.py            # TCP/UART 메시지 파싱 및 Base64 디코딩 (parse_message, decode_message_text)
 ├── config.py              # 장치 Port, Backend, 네트워크 등 전역 설정
-├── theme.py               # 관리자 프로그램과 통일된 모던 UI 테마
+├── ui/                    # 작업자 UI 컴포넌트 레이어
+│   ├── worker_window.py   # 작업자 메인 GUI (카메라·STEP 기준 이미지, 상태 표시, 제어 버튼, 로그)
+│   ├── login_window.py    # 작업자 로그인 UI
+│   └── theme.py           # 관리자 프로그램과 통일된 모던 UI 테마
+├── services/              # 비즈니스 로직 및 상태 관리 서비스
+│   ├── auth_manager.py    # 작업자 인증 세션 관리 (WorkerSession, AuthResult, AuthRequestThread)
+│   ├── product_service.py # 제품 목록과 현재 STEP 기준 이미지 비동기 조회 서비스
+│   ├── state_reporter.py  # 큐 기반 비동기 작업상태 이벤트 서버 전송 (MonitoringEventThread)
+│   └── work_state.py      # 공정 STEP/상태 머신 컨트롤러 (WorkStateController, WorkSnapshot)
+├── devices/               # 하드웨어 디바이스 제어 및 AI 추론
+│   ├── ai_judge.py        # AI 추론 비동기 스레드 (AiInferenceThread, BaseJudge, MockJudge)
+│   ├── camera_manager.py  # USB/CSI/Mock 카메라 프레임 캡처 스레드 (CameraThread)
+│   ├── stm_controller.py  # STM32 UART 명령 전송 캡슐화 컨트롤러 (StmController)
+│   └── uart_manager.py    # STM32 시리얼 통신 수신 스레드 (UartReceiverThread)
+├── network/               # 저수준 TCP 네트워크 통신
+│   ├── network_client.py  # TCP JSON 통신 및 연결 헬스체크 (send_json_request, ServerCheckThread)
+│   ├── protocol.py        # TCP/UART 메시지 파싱 및 Base64 디코딩 (parse_message, decode_message_text)
+│   ├── server_monitor.py  # 관제 PC 서버 연결 주기적 감시 모듈 (ServerMonitor)
+│   └── tcp_server.py      # Monitoring PC 관리자 호출 수신 TCP 서버 (TcpServerThread)
+├── tests/                 # 자동화 단위 테스트
+│   └── test_state_reporter.py
 ├── requirements.txt       # Jetson용 Python 필수 패키지 (pyserial, numpy)
 └── requirements-dev.txt   # 일반 개발 PC TEST_MODE용 (PyQt5, opencv-python 포함)
 ```

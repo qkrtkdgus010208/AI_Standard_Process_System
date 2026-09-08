@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from state_reporter import MonitoringEventThread
+from services.state_reporter import MonitoringEventThread
 
 
 class MonitoringEventThreadTest(unittest.TestCase):
@@ -23,7 +23,7 @@ class MonitoringEventThreadTest(unittest.TestCase):
             "event": "ai_fail",
         }
         event_id = "11111111-1111-4111-8111-111111111111"
-        with patch("state_reporter.uuid.uuid4", return_value=event_id):
+        with patch("services.state_reporter.uuid.uuid4", return_value=event_id):
             self.reporter.enqueue_state(state)
         state["last_result"] = "waiting"
 
@@ -42,7 +42,7 @@ class MonitoringEventThreadTest(unittest.TestCase):
             "22222222-2222-4222-8222-222222222222",
             "33333333-3333-4333-8333-333333333333",
         ]
-        with patch("state_reporter.uuid.uuid4", side_effect=event_ids):
+        with patch("services.state_reporter.uuid.uuid4", side_effect=event_ids):
             self.reporter.enqueue_state(state)
             self.reporter.enqueue_state(state)
 

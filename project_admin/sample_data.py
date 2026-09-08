@@ -1,6 +1,6 @@
 """개발용 샘플 데이터를 수동으로 생성하는 독립 실행 파일입니다."""
 
-from database_manager import DatabaseManager
+from db.database_manager import DatabaseManager
 
 
 def create_sample_data() -> None:

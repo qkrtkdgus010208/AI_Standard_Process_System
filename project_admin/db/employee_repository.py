@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Callable, Optional
 
-from state_types import EmployeeIdentity
+from models.state_types import EmployeeIdentity
 
 class EmployeeRepository:
     """직원 계정과 출근 현황을 조회·변경하는 저장소입니다."""

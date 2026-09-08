@@ -12,18 +12,18 @@ from typing import Optional
 from PyQt5.QtCore import QThread, pyqtSignal
 
 import config
-from network_client import (
+from network.network_client import (
     ServerCheckThread,
     check_monitoring_server_connection,
     send_json_request,
 )
-from product_service import (
+from services.product_service import (
     ProductFetchThread,
     ProductInfo,
     fetch_products_from_monitoring_pc,
     parse_product_item,
 )
-from state_reporter import MonitoringEventThread, parse_work_state_data
+from services.state_reporter import MonitoringEventThread, parse_work_state_data
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,11 @@ TCP JSON과 PyQt signal은 런타임 호환을 위해 dict를 유지하고, Type
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import TypedDict
+try:
+    from typing import NotRequired
+except ImportError:
+    from typing_extensions import NotRequired
 
 
 class EmployeeIdentity(TypedDict):

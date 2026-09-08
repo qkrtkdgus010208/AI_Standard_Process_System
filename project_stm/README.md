@@ -8,18 +8,30 @@ STM32F411RE 마이크로컨트롤러 기반의 조립 공정 현장 제어기 �
 
 ```text
 project_stm/
-├── main.c              # Top-Down 메인 루프, 프로세스별(UART/부저/버튼) 핸들러 모듈
-├── key.c / key.h       # 물리 버튼 EXTI 인터럽트 및 디바운스 제어
-├── led.c / led.h       # STEP 1~9 LED 및 FAIL LED 점등/소등 제어
-├── buzzer.c / buzzer.h # 상태별 6종 부저 멜로디 시퀀스 및 비동기 재생 제어
-├── timer.c / timer.h   # TIM2 기반 부저 타이머 (비동기 사운드 생성)
-├── uart.c / uart.h     # USART2 (115200 bps) 송수신 및 인터럽트 핸들러
-├── clock.c             # 시스템 클럭 설정
-├── systick.c           # SysTick 딜레이
-├── device_driver.h     # 하드웨어 드라이버 통합 헤더
-├── macro.h             # 비트 조작 매크로
 ├── Makefile            # arm-none-eabi-gcc 빌드 및 st-flash 플래싱 스크립트
-└── rom_0x08000000.lds  # 링커 스크립트
+├── rom_0x08000000.lds  # 링커 스크립트
+├── include/            # 하드웨어 드라이버 및 CMSIS 헤더 파일
+│   ├── buzzer.h        # 상태별 6종 부저 멜로디 시퀀스 정의
+│   ├── device_driver.h # 하드웨어 드라이버 통합 헤더
+│   ├── key.h           # 물리 버튼 인터럽트 및 디바운스 헤더
+│   ├── led.h           # STEP 1~9 및 FAIL LED 제어 헤더
+│   ├── macro.h         # 비트 조작 매크로
+│   ├── timer.h         # TIM2 타이머 제어 헤더
+│   ├── uart.h          # USART2 통신 헤더
+│   └── *.h             # CMSIS 및 STM32F411 레지스터 헤더
+└── src/                # C 소스 및 시작 어셈블리 코드
+    ├── main.c          # Top-Down 메인 루프, 프로세스별 핸들러 모듈
+    ├── buzzer.c        # 부저 음향 시퀀스 및 비동기 사운드 재생
+    ├── clock.c         # 시스템 클럭 설정
+    ├── crt0.s          # 시작 벡터 및 런타임 초기화 어셈블리
+    ├── exception.c     # 시스템 예외 핸들러
+    ├── key.c           # 물리 버튼 EXTI 인터럽트 제어
+    ├── led.c           # STEP 1~9 및 FAIL LED 제어
+    ├── runtime.c       # C 런타임 라이브러리 지원
+    ├── system_stm32f4xx.c # CMSIS 시스템 초기화
+    ├── systick.c       # SysTick 딜레이
+    ├── timer.c         # TIM2 하드웨어 타이머 제어
+    └── uart.c          # USART2 통신 및 인터럽트
 ```
 
 ---

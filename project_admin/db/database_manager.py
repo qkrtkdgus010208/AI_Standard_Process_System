@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 import config
-from database_schema import DatabaseSchemaManager
-from employee_repository import EmployeeRepository
-from product_repository import ProductRepository
-from state_types import WorkerStateInput
-from time_utils import format_seconds
-from work_history_repository import WorkHistoryRepository
-from worker_state_recorder import WorkerStateRecorder
+from db.database_schema import DatabaseSchemaManager
+from db.employee_repository import EmployeeRepository
+from db.product_repository import ProductRepository
+from db.work_history_repository import WorkHistoryRepository
+from models.state_types import WorkerStateInput
+from services.time_utils import format_seconds
+from services.worker_state_recorder import WorkerStateRecorder
 
 DEFAULT_DB_PATH = config.DATABASE_PATH
 PASSWORD_ITERATIONS = 260_000

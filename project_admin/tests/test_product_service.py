@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from product_service import ProductService
+from services.product_service import ProductService
 
 
 class FakeProductDatabase:

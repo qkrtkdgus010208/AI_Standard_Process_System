@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
 )
 
 import config
-from auth_manager import AuthRequestThread, AuthResult
+from services.auth_manager import AuthRequestThread, AuthResult
 
 
 class WorkerLoginWindow(QMainWindow):

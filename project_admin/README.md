@@ -11,24 +11,40 @@ OOP 원칙(단일 책임 원칙, Facade 패턴, 서비스 계층 분리)에 따�
 ```text
 project_admin/
 ├── main.py                     # 관리자 프로그램 진입점 및 윈도우 라이프사이클 관리
-├── admin_window.py             # 관리자 메인 GUI (직원 모니터링, 제품 관리 탭)
-├── login_window.py             # 관리자 로그인 화면
-├── monitoring_gateway.py       # 작업자 PC 연동 TCP Gateway (인증, 제품조회, 상태수신, 세션 관리)
-├── tcp_client.py               # Jetson 작업자 화면으로 메시지/호출 전송 클라이언트 (TcpClient)
-├── database_manager.py         # DB 접근 통합 Facade 인터페이스 (DatabaseManager)
-├── worker_state_recorder.py    # [NEW] 공정/STEP/Pause/판정/불량 상태머신 기록 전담 서비스 (WorkerStateRecorder)
-├── time_utils.py               # [NEW] 시간 포맷팅(HH:MM:SS) 유틸리티 (format_seconds)
-├── ui_helpers.py               # [NEW] 공통 UI 헬퍼 (테이블 생성/바인딩, 메트릭 카드, 역할 매핑)
-├── employee_detail_dialog.py   # 직원 상세 이력 조회 (출퇴근, 작업회차, 일시정지, 불량이력, 메시지 전송)
-├── product_detail_dialog.py    # 제품별 STEP 품질 통계 및 기준점(Baseline) 관리
-├── product_dialog.py           # 제품 및 STEP별 기준 이미지 추가/수정 다이얼로그
-├── step_guide_storage.py       # STEP 기준 이미지 변환·저장·경로 검증
-├── step_history_dialog.py      # 특정 작업 회차의 STEP별 실제 작업시간 및 통계 조회
-├── worker_account_dialog.py    # 작업자 계정 발급 및 계정 말소 다이얼로그
-├── theme.py                    # 시스템 공통 QSS 테마 및 컬러 팔레트
 ├── config.py                   # DB 경로, 포트 번호, 타임아웃 등 관제 전역 설정
 ├── sample_data.py              # 개발 및 시연용 초기 데이터 시더
-├── test_state_persistence.py   # 22개 시나리오 상태 보존 및 DB 무결성 자동화 테스트
+├── db/                         # 데이터베이스 접근 및 리포지토리 레이어
+│   ├── database_manager.py     # DB 접근 통합 Facade 인터페이스 (DatabaseManager)
+│   ├── database_schema.py      # SQLite 스키마 생성 및 마이그레이션
+│   ├── employee_repository.py  # 직원 정보 CRUD 및 인증 쿼리
+│   ├── product_repository.py   # 제품 정보 및 STEP 정의 CRUD
+│   └── work_history_repository.py # 공정/작업/불량 이력 통계 쿼리
+├── models/                     # 데이터 계약 및 타입 정의
+│   └── state_types.py          # 작업자 상태 및 통신 TypedDict 정의
+├── services/                   # 비즈니스 로직 및 외부 처리 서비스
+│   ├── product_service.py      # 제품 CRUD 및 기준 이미지 조합 서비스
+│   ├── step_guide_storage.py   # STEP 기준 이미지 변환·저장·경로 검증
+│   ├── time_utils.py           # 시간 포맷팅(HH:MM:SS) 유틸리티
+│   └── worker_state_recorder.py# 공정/STEP/Pause/판정/불량 상태머신 트랜잭션 기록
+├── network/                    # TCP 네트워크 통신 레이어
+│   ├── monitoring_gateway.py   # 작업자 PC 연동 TCP Gateway (스레드)
+│   ├── tcp_client.py           # 작업자 화면 메시지/호출 전송 클라이언트 (TcpClient)
+│   └── mock_tcp_server.py      # 테스트/시뮬레이션용 Mock TCP 서버
+├── ui/                         # 관리자 UI 컴포넌트 레이어
+│   ├── admin_window.py         # 관리자 메인 GUI (직원 모니터링, 제품 관리 탭)
+│   ├── login_window.py         # 관리자 로그인 화면
+│   ├── theme.py                # 시스템 공통 QSS 테마 및 컬러 팔레트
+│   ├── ui_helpers.py           # 공통 UI 헬퍼 (테이블 생성/바인딩, 메트릭 카드)
+│   └── dialogs/                # 상세 및 입력 다이얼로그 모달
+│       ├── employee_detail_dialog.py # 직원 상세 이력 조회 및 메시지 전송
+│       ├── product_detail_dialog.py  # 제품별 STEP 품질 통계 및 기준점 관리
+│       ├── product_dialog.py         # 제품 및 STEP별 기준 이미지 추가/수정
+│       ├── step_history_dialog.py    # 작업 회차별 STEP 작업시간 및 통계
+│       └── worker_account_dialog.py  # 작업자 계정 등록/말소 다이얼로그
+├── tests/                      # 자동화 단위 테스트 스위트 (44개 테스트)
+│   ├── test_database_facade.py
+│   ├── test_product_service.py
+│   └── test_state_persistence.py
 └── requirements.txt            # 필수 패키지 (PyQt5)
 ```
 

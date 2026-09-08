@@ -4,10 +4,10 @@ import sys
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
-from auth_manager import WorkerSession
-from login_window import WorkerLoginWindow
-from theme import apply_theme
-from worker_window import WorkerWindow
+from services.auth_manager import WorkerSession
+from ui.login_window import WorkerLoginWindow
+from ui.theme import apply_theme
+from ui.worker_window import WorkerWindow
 
 
 class WorkerApplication:

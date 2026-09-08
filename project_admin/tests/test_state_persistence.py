@@ -10,11 +10,11 @@ from pathlib import Path
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage
 
-from database_manager import DatabaseManager
-from monitoring_gateway import MonitoringGatewayThread
-from tcp_client import TcpClient, WorkerEndpointRegistry
+from db.database_manager import DatabaseManager
+from network.monitoring_gateway import MonitoringGatewayThread
+from network.tcp_client import TcpClient, WorkerEndpointRegistry
 import config
-from step_guide_storage import resolve_guide_path, save_guide_image
+from services.step_guide_storage import resolve_guide_path, save_guide_image
 
 
 class WorkerStatePersistenceTest(unittest.TestCase):

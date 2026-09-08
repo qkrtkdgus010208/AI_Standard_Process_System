@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QLabel, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
-from database_manager import DatabaseManager
+from db.database_manager import DatabaseManager
 
 
 class ProductDetailDialog(QDialog):

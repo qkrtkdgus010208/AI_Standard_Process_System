@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from network_client import send_json_request
+from network.network_client import send_json_request
 
 
 def _extract_int(raw: dict, keys: tuple) -> Optional[int]:

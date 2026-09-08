@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from PyQt5.QtCore import QTimer
 
 import config
-from network_client import ServerCheckThread
+from network.network_client import ServerCheckThread
 
 
 class ServerMonitor:

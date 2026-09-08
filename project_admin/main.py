@@ -5,12 +5,12 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 import config
-from admin_window import AdminWindow
-from database_manager import DatabaseManager
-from login_window import LoginWindow
-from tcp_client import TcpClient, WorkerEndpointRegistry
-from theme import apply_theme
-from monitoring_gateway import MonitoringGatewayThread
+from db.database_manager import DatabaseManager
+from network.monitoring_gateway import MonitoringGatewayThread
+from network.tcp_client import TcpClient, WorkerEndpointRegistry
+from ui.admin_window import AdminWindow
+from ui.login_window import LoginWindow
+from ui.theme import apply_theme
 
 
 class MonitoringApplication:

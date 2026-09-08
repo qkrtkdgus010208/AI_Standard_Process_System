@@ -7,8 +7,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QVBoxLayout, QWidget,
 )
 
-from database_manager import DatabaseManager
-from theme import add_card_shadow
+from db.database_manager import DatabaseManager
+from ui.theme import add_card_shadow
 
 
 class ProcessFlowIllustration(QWidget):

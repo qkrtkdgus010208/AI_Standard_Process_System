@@ -8,10 +8,10 @@ from PyQt5.QtWidgets import (
     QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from database_manager import DatabaseManager
-from step_history_dialog import StepHistoryDialog
-from tcp_client import SendResult, TcpClient, build_employee_message
-from ui_helpers import ROLE_DISPLAY_NAMES, fill_table, make_read_only_table
+from db.database_manager import DatabaseManager
+from network.tcp_client import SendResult, TcpClient, build_employee_message
+from ui.dialogs.step_history_dialog import StepHistoryDialog
+from ui.ui_helpers import ROLE_DISPLAY_NAMES, fill_table, make_read_only_table
 
 
 class EmployeeMessageDialog(QDialog):

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from database_manager import DatabaseManager
-from step_guide_storage import (
+if TYPE_CHECKING:
+    from db.database_manager import DatabaseManager
+
+from services.step_guide_storage import (
     delete_unused_guide_files,
     resolve_guide_path,
     save_guide_image,

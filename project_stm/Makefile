@@ -36,9 +36,9 @@ OBJCOPY			= $(TOOL_DIR)/bin/$(TARGET)-objcopy
 OBJDUMP			= $(TOOL_DIR)/bin/$(TARGET)-objdump
 
 # Source & Header File 
-CSRC 			= $(wildcard *.c)
-ASRC 			= $(wildcard *.s)
-HEADER 			= $(wildcard *.h)
+CSRC 			= $(wildcard src/*.c)
+ASRC 			= $(wildcard src/*.s)
+HEADER 			= $(wildcard include/*.h)
 OBJS    		= $(CSRC:.c=.o) $(ASRC:.s=.o)
 DUMP 			= $(wildcard *.txt)
 
@@ -46,7 +46,7 @@ DUMP 			= $(wildcard *.txt)
 C_DIR			= $(TOOL_DIR)/$(TARGET)
 GCC_DIR			= $(TOOL_DIR)/lib/gcc/$(TARGET)/$(VERSION)
 LIB_OPTION		= -lc -lgcc
-INCLUDE			= -nostdinc -I. -I "$(C_DIR)/include" -I "$(GCC_DIR)/include" 
+INCLUDE			= -nostdinc -Iinclude -I "$(C_DIR)/include" -I "$(GCC_DIR)/include" 
 
 all : $(OUT_BIN_FILE)
 
@@ -58,14 +58,18 @@ $(OUT_BIN_FILE): $(OUT_ELF_FILE)
 $(OUT_FILE_NAME).elf: $(OBJS)
 	$(CC) $(OBJS) $(LDFLAGS) $(LIB_OPTION) -o $@
 
-$(OBJS): $(ASRC) $(CSRC) $(HEADER)
-	$(CC) $(ASRC) $(CSRC) $(INCLUDE) $(CFLAGS) 
+src/%.o: src/%.c $(HEADER)
+	$(CC) $(CFLAGS) $(INCLUDE) -c $< -o $@
+
+src/%.o: src/%.s $(HEADER)
+	$(CC) $(CFLAGS) $(INCLUDE) -c $< -o $@
 
 clean :
 	rm -f $(OUT_BIN_FILE)
 	rm -f $(OUT_ELF_FILE)
 	rm -f $(OUT_MAP_FILE)
 	rm -f $(OBJS)
+	rm -f *.o
 	rm -f $(DUMP)
 
 run: # Flash STM32

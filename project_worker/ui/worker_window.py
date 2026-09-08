@@ -12,17 +12,17 @@ from PyQt5.QtWidgets import (
 )
 
 import config
-from auth_manager import WorkerSession
-from ai_judge import AiInferenceThread, JudgeResult
-from camera_manager import CameraThread
-from product_service import ProductInfo, ProductFetchThread, StepGuideFetchThread
-from protocol import decode_message_text, parse_message
-from server_monitor import ServerMonitor
-from state_reporter import MonitoringEventThread
-from stm_controller import StmController
-from tcp_server import TcpServerThread
-from uart_manager import UartReceiverThread
-from work_state import WorkStateController
+from services.auth_manager import WorkerSession
+from devices.ai_judge import AiInferenceThread, JudgeResult
+from devices.camera_manager import CameraThread
+from services.product_service import ProductInfo, ProductFetchThread, StepGuideFetchThread
+from network.protocol import decode_message_text, parse_message
+from network.server_monitor import ServerMonitor
+from services.state_reporter import MonitoringEventThread
+from devices.stm_controller import StmController
+from network.tcp_server import TcpServerThread
+from devices.uart_manager import UartReceiverThread
+from services.work_state import WorkStateController
 
 try:
     import cv2
