@@ -93,7 +93,7 @@ python3 main.py
 
 ## 5. 자동화 테스트 실행
 
-데이터베이스 상태 전이 및 복원 로직 검증을 위한 22개 통합 테스트가 포함되어 있습니다:
+데이터베이스, Gateway, 제품 서비스 및 상태 복원 로직을 검증하는 자동화 테스트가 포함되어 있습니다:
 ```bash
-python3 test_state_persistence.py
+python3 -m unittest discover -p "test*.py"
 ```

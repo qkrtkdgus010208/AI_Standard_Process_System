@@ -577,4 +577,5 @@ __pycache__/
 *.onnx
 datasets/
 /project_admin/step_guide_images/
+/project_admin/AGENTS.md
 EOF
