@@ -185,6 +185,10 @@ class DatabaseSchemaManager:
             DROP INDEX IF EXISTS idx_defect_logs_step_time;
             CREATE INDEX IF NOT EXISTS idx_judgement_logs_step_time
                 ON judgement_logs(step_run_id, judged_at);
+            CREATE INDEX IF NOT EXISTS idx_judgement_logs_step_result
+                ON judgement_logs(step_run_id, result);
+            CREATE INDEX IF NOT EXISTS idx_step_runs_product_run_step_no
+                ON step_runs(product_run_id, step_no);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_state_events_client_event
                 ON worker_state_events(employee_id, client_event_id)
                 WHERE client_event_id IS NOT NULL;

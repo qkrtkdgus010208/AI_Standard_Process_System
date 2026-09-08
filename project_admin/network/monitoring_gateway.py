@@ -48,6 +48,7 @@ class MonitoringGatewayThread(QThread):
         self._sessions: dict[str, GatewaySession] = {}
         self._sessions_lock = RLock()
         self._employee_locks = {}
+        self._step_guide_cache: dict[tuple[str, int, str, str], dict] = {}
         self.endpoint_registry = endpoint_registry or WorkerEndpointRegistry()
 
     def _employee_lock(self, employee_id: str) -> Lock:
@@ -185,8 +186,8 @@ class MonitoringGatewayThread(QThread):
         }
 
     def _handle_products_request(self) -> dict:
-        """등록된 제품 목록을 조회하여 반환합니다."""
-        products = self.database_manager.search_products("")
+        """등록된 제품 목록을 가볍고 빠르게 조회하여 반환합니다."""
+        products = self.database_manager.list_products()
         return {
             "ok": True,
             "products": [
@@ -215,6 +216,13 @@ class MonitoringGatewayThread(QThread):
         guide = self.database_manager.get_product_step_guide(product_id, step_no)
         if guide is None:
             return {"ok": True, "guide": None}
+
+        cache_key = (product_id, step_no, str(guide.get("sha256", "")), str(guide.get("updated_at", "")))
+        with self._sessions_lock:
+            cached_response = self._step_guide_cache.get(cache_key)
+            if cached_response is not None:
+                return cached_response
+
         try:
             path = resolve_guide_path(guide["image_path"])
             image_data = path.read_bytes()
@@ -222,7 +230,8 @@ class MonitoringGatewayThread(QThread):
             return {"ok": False, "message": f"기준 이미지를 읽을 수 없습니다: {error}"}
         if len(image_data) > config.STEP_GUIDE_MAX_RESPONSE_BYTES:
             return {"ok": False, "message": "기준 이미지 용량이 전송 제한을 초과합니다."}
-        return {
+
+        response = {
             "ok": True,
             "guide": {
                 "product_id": product_id,
@@ -233,6 +242,9 @@ class MonitoringGatewayThread(QThread):
                 "image_base64": base64.b64encode(image_data).decode("ascii"),
             },
         }
+        with self._sessions_lock:
+            self._step_guide_cache[cache_key] = response
+        return response
 
     def _handle_state_request(
         self, request: StateRequest, employee: EmployeeIdentity,

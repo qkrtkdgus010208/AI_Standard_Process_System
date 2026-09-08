@@ -356,13 +356,18 @@ class AdminWindow(QMainWindow):
         self.total_employee_value.setText(str(counts["total_count"]))
         self.worker_value.setText(str(counts["worker_count"]))
         self.admin_value.setText(str(counts["admin_count"]))
-        self.working_worker_value.setText(str(counts["working_worker_count"]))
-        self.result_table.setRowCount(len(employees))
-        self._employee_row_by_id.clear()
-        for row_index, employee in enumerate(employees):
-            employee_id = str(employee.get("employee_id", ""))
-            self._employee_row_by_id[employee_id] = row_index
-            self._update_employee_row(row_index, employee)
+        self.result_table.setUpdatesEnabled(False)
+        self.result_table.blockSignals(True)
+        try:
+            self.result_table.setRowCount(len(employees))
+            self._employee_row_by_id.clear()
+            for row_index, employee in enumerate(employees):
+                employee_id = str(employee.get("employee_id", ""))
+                self._employee_row_by_id[employee_id] = row_index
+                self._update_employee_row(row_index, employee)
+        finally:
+            self.result_table.blockSignals(False)
+            self.result_table.setUpdatesEnabled(True)
         self.result_count_label.setText(f"{len(employees)}명")
 
     def _update_employee_row(self, row_index: int, employee: dict) -> None:
@@ -458,22 +463,28 @@ class AdminWindow(QMainWindow):
         except Exception as error:
             QMessageBox.critical(self, "DB 오류", f"제품 검색 중 오류가 발생했습니다.\n{error}")
             return
-        self.product_table.setRowCount(len(products))
-        for row_index, product in enumerate(products):
-            values = (
-                product["product_id"], product["product_name"], product["total_steps"],
-                product.get("completed_count", 0), product.get("defect_count", 0),
-                f"{float(product.get('defect_rate', 0)):.1f}%",
-            )
-            for column_index, value in enumerate(values):
-                item = QTableWidgetItem(str(value))
-                item.setToolTip(str(value))
-                item.setTextAlignment(
-                    Qt.AlignCenter if column_index != 1 else Qt.AlignVCenter | Qt.AlignLeft
+        self.product_table.setUpdatesEnabled(False)
+        self.product_table.blockSignals(True)
+        try:
+            self.product_table.setRowCount(len(products))
+            for row_index, product in enumerate(products):
+                values = (
+                    product["product_id"], product["product_name"], product["total_steps"],
+                    product.get("completed_count", 0), product.get("defect_count", 0),
+                    f"{float(product.get('defect_rate', 0)):.1f}%",
                 )
-                if column_index in (4, 5) and product.get("defect_count", 0):
-                    item.setForeground(QColor("#B45656"))
-                self.product_table.setItem(row_index, column_index, item)
+                for column_index, value in enumerate(values):
+                    item = QTableWidgetItem(str(value))
+                    item.setToolTip(str(value))
+                    item.setTextAlignment(
+                        Qt.AlignCenter if column_index != 1 else Qt.AlignVCenter | Qt.AlignLeft
+                    )
+                    if column_index in (4, 5) and product.get("defect_count", 0):
+                        item.setForeground(QColor("#B45656"))
+                    self.product_table.setItem(row_index, column_index, item)
+        finally:
+            self.product_table.blockSignals(False)
+            self.product_table.setUpdatesEnabled(True)
         self.product_count_label.setText(f"{len(products)}개")
 
     def add_product(self) -> None:

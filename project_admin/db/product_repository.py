@@ -28,6 +28,14 @@ class ProductRepository:
                    GROUP BY p.product_id, p.product_name, p.total_steps ORDER BY p.product_id""", (search_text, search_text)).fetchall()
         return [dict(row) for row in rows]
 
+    def list_products(self) -> list[dict]:
+        """등록된 제품의 기본 정보만 가볍고 빠르게 조회합니다."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT product_id, product_name, total_steps FROM products ORDER BY product_id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_product(self, product_id: str) -> Optional[dict]:
         """제품 기본 정보를 조회합니다."""
         with self.connect() as connection:

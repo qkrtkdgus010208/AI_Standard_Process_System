@@ -87,6 +87,7 @@ class WorkerWindow(QMainWindow):
         self._guide_fetch_thread: Optional[StepGuideFetchThread] = None
         self._requested_guide_key = None
         self._displayed_guide_key = None
+        self._guide_pixmap_cache: dict[tuple[str, int], QPixmap] = {}
         self.message_popup: Optional[QMessageBox] = None
 
         # ── 서비스 스레드 ──
@@ -456,6 +457,7 @@ class WorkerWindow(QMainWindow):
         if self.product_fetch_thread is not None and self.product_fetch_thread.isRunning():
             return
         self._displayed_guide_key = None
+        self._guide_pixmap_cache.clear()
         self.product_fetch_thread = ProductFetchThread(token=self.session.token, parent=self)
         self.product_fetch_thread.products_fetched.connect(self._on_products_fetched)
         self.product_fetch_thread.finished.connect(self._clear_product_fetch_thread)
@@ -570,6 +572,7 @@ class WorkerWindow(QMainWindow):
             if product is None:
                 return
         self._current_product = product
+        self._guide_pixmap_cache.clear()
         self.product_id_display.setText(product.product_id)
         self.total_steps_display.setText(f"{product.total_steps} 단계")
         self._apply_work_setup()
@@ -598,13 +601,23 @@ class WorkerWindow(QMainWindow):
         self.step_guide_view.setText(message)
 
     def _request_step_guide(self, product_id: str, step_no: int) -> None:
-        """요청된 제품·STEP 기준 이미지를 비동기로 가져옵니다."""
+        """요청된 제품·STEP 기준 이미지를 캐시 또는 비동기 네트워크로 가져옵니다."""
         if self._is_terminating or not product_id or int(step_no) < 1:
             return
         key = (str(product_id), int(step_no))
         self._requested_guide_key = key
         if self._displayed_guide_key == key:
             return
+
+        cached_pixmap = self._guide_pixmap_cache.get(key)
+        if cached_pixmap is not None and not cached_pixmap.isNull():
+            self._displayed_guide_key = key
+            self.guide_title_label.setText(f"STEP {step_no} 기준 이미지")
+            self.step_guide_view.setStyleSheet(_GUIDE_IMAGE_STYLE)
+            self.step_guide_view.setScaledContents(True)
+            self.step_guide_view.setPixmap(cached_pixmap)
+            return
+
         if self._guide_fetch_thread is not None and self._guide_fetch_thread.isRunning():
             return
         self.guide_title_label.setText(f"STEP {step_no} 기준 이미지")
@@ -648,6 +661,7 @@ class WorkerWindow(QMainWindow):
             self.step_guide_view.setText("기준 이미지가\n손상되었습니다.")
             self.add_log("warning", "STEP 기준 이미지 데이터를 표시할 수 없습니다.")
             return
+        self._guide_pixmap_cache[key] = pixmap
         self.step_guide_view.setStyleSheet(_GUIDE_IMAGE_STYLE)
         self.step_guide_view.setScaledContents(True)
         self.step_guide_view.setPixmap(pixmap)
@@ -746,16 +760,12 @@ class WorkerWindow(QMainWindow):
                 scale = min(vw / fw, vh / fh)
                 nw, nh = max(1, int(fw * scale)), max(1, int(fh * scale))
                 resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_LINEAR)
-                rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-                self.camera_view.setPixmap(
-                    QPixmap.fromImage(QImage(rgb.data, nw, nh, nw * 3, QImage.Format_RGB888))
-                )
+                qimg = QImage(resized.data, nw, nh, nw * 3, QImage.Format_BGR888)
+                self.camera_view.setPixmap(QPixmap.fromImage(qimg))
             else:
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                fh, fw, _ = rgb.shape
-                self.camera_view.setPixmap(
-                    QPixmap.fromImage(QImage(rgb.data, fw, fh, fw * 3, QImage.Format_RGB888))
-                )
+                fh, fw, _ = frame.shape
+                qimg = QImage(frame.data, fw, fh, fw * 3, QImage.Format_BGR888)
+                self.camera_view.setPixmap(QPixmap.fromImage(qimg))
 
     # ── 작업 제어 버튼 핸들러 ────────────────────────────────────────────────
 

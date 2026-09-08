@@ -40,6 +40,16 @@ class DatabaseFacadeTest(unittest.TestCase):
     def test_format_seconds_compatibility_entry_point_is_preserved(self):
         self.assertEqual(DatabaseManager.format_seconds(3661), "01:01:01")
 
+    def test_list_products_returns_clean_lightweight_rows(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database = DatabaseManager(Path(temporary_directory) / "sample.db")
+            database.initialize_database()
+            database.insert_sample_data()
+            products = database.list_products()
+            self.assertEqual(len(products), 1)
+            self.assertEqual(products[0]["product_id"], "P001")
+            self.assertEqual(products[0]["total_steps"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

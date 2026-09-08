@@ -63,7 +63,7 @@ class TcpServerThread(QThread):
         """한 Client가 보낸 줄 단위 메시지를 수신 즉시 실시간으로 전달합니다."""
         with client_socket:
             client_socket.settimeout(config.TCP_CLIENT_TIMEOUT_SECONDS)
-            buffer = ""
+            buffer = bytearray()
             while self._running:
                 try:
                     data = client_socket.recv(4096)
@@ -71,16 +71,18 @@ class TcpServerThread(QThread):
                     break
                 if not data:
                     break
-                buffer += data.decode("utf-8", errors="replace")
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
+                buffer.extend(data)
+                while b"\n" in buffer:
+                    line_bytes, _, remaining = buffer.partition(b"\n")
+                    buffer = bytearray(remaining)
+                    line = line_bytes.decode("utf-8", errors="replace").strip()
                     if line:
                         self.message_received.emit(line, address)
             # 남아있는 잔여 문자열 처리
-            remaining = buffer.strip()
-            if remaining:
-                self.message_received.emit(remaining, address)
+            if buffer:
+                remaining = buffer.decode("utf-8", errors="replace").strip()
+                if remaining:
+                    self.message_received.emit(remaining, address)
 
     def stop(self) -> None:
         """accept 대기를 해제하고 TCP Server를 종료합니다."""

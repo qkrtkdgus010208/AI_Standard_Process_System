@@ -45,6 +45,9 @@ class DatabaseManager:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 10000")
         connection.execute("PRAGMA synchronous = NORMAL")
+        connection.execute("PRAGMA temp_store = MEMORY")
+        connection.execute("PRAGMA cache_size = -64000")
+        connection.execute("PRAGMA mmap_size = 268435456")
         try:
             yield connection
             connection.commit()
@@ -129,6 +132,9 @@ class DatabaseManager:
 
     def search_products(self, keyword: str = "") -> list[dict]:
         return self._product_repository.search_products(keyword)
+
+    def list_products(self) -> list[dict]:
+        return self._product_repository.list_products()
 
     def get_product(self, product_id: str) -> Optional[dict]:
         return self._product_repository.get_product(product_id)

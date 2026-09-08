@@ -34,13 +34,17 @@ def make_read_only_table(headers: list[str]) -> QTableWidget:
 
 def fill_table(table: QTableWidget, rows: list[list]) -> None:
     """QTableWidget의 내용을 주어진 2차원 데이터 행으로 안전하게 채웁니다."""
+    table.setUpdatesEnabled(False)
     table.blockSignals(True)
-    table.clearContents()
-    table.setRowCount(len(rows))
-    for row_index, values in enumerate(rows):
-        for column_index, value in enumerate(values):
-            display = "—" if value is None or value == "" else str(value)
-            item = QTableWidgetItem(display)
-            item.setTextAlignment(Qt.AlignCenter)
-            table.setItem(row_index, column_index, item)
-    table.blockSignals(False)
+    try:
+        table.clearContents()
+        table.setRowCount(len(rows))
+        for row_index, values in enumerate(rows):
+            for column_index, value in enumerate(values):
+                display = "—" if value is None or value == "" else str(value)
+                item = QTableWidgetItem(display)
+                item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(row_index, column_index, item)
+    finally:
+        table.blockSignals(False)
+        table.setUpdatesEnabled(True)

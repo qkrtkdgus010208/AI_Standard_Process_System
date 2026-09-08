@@ -242,8 +242,9 @@ static void Handle_Btn_Check(void)
 		return;
 	}
 
-	Wait_Button_Release(BTN_CHECK);
+	/* 버튼 감지 즉시 UART 메시지를 전송하여 Jetson이 대기 시간 없이 즉시 캡처/추론을 시작합니다. */
 	Uart2_Send_String(Uart_Tx_Dataset[0]);
+	Wait_Button_Release(BTN_CHECK);
 	btn_state = BTN_RELEASED;
 }
 
@@ -258,8 +259,6 @@ static void Handle_Btn_Pause(void)
 		NVIC_EnableIRQ(BTN_PAUSE_IRQN);
 		return;
 	}
-
-	Wait_Button_Release(BTN_PAUSE);
 
 	if (is_pause == 0)
 	{
@@ -278,6 +277,8 @@ static void Handle_Btn_Pause(void)
 		Buzzer_Play(SOUND_RESUME);
 	}
 
+	Wait_Button_Release(BTN_PAUSE);
+
 	btn_state = BTN_RELEASED;
 	EXTI->PR = (0x1 << BTN_PAUSE);
 	NVIC_ClearPendingIRQ(BTN_PAUSE_IRQN);
@@ -288,10 +289,10 @@ static void Handle_Btn_Pause(void)
 static void Handle_Btn_Reset(void)
 {
 	Btn_ISR_Enable(0, 0, 0);
-	Wait_Button_Release(BTN_RESET);
 	Uart2_Send_String(Uart_Tx_Dataset[3]);
 	Reset_System_State(0);
 	Buzzer_Play(SOUND_DEFECT);
+	Wait_Button_Release(BTN_RESET);
 }
 
 /* =====================================================================
