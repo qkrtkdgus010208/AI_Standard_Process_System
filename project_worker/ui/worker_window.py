@@ -885,6 +885,9 @@ class WorkerWindow(QMainWindow):
         self.work_controller.resume()
 
     def _on_uart_reset(self, message) -> None:
+        if self.work_controller.snapshot.state != "running":
+            self.add_log("warning", f"[UART 수신] {message.raw} → 무시됨 (일시정지 중이거나 공정 진행 중이 아님)")
+            return
         self.add_log("error", f"[UART 수신] {message.raw} → 공정 초기화 / 수동 불량 등록 (STM32 버튼 2)")
         self.work_controller.register_defect()
 

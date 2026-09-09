@@ -150,7 +150,7 @@ static void Handle_Uart_Pause(void)
 	{
 		is_pause = 1;
 		Step_LED_Off(led_step);
-		Btn_ISR_Enable(0, 0, 1, 1);
+		Btn_ISR_Enable(0, 0, 1, 0);
 		Buzzer_Play(SOUND_PAUSE);
 	}
 }
@@ -290,7 +290,7 @@ static void Handle_Btn_Pause(void)
 		is_pause = 1;
 		Uart2_Send_String(Uart_Tx_Dataset[1]);
 		Step_LED_Off(led_step);
-		Btn_ISR_Enable(0, 0, 1, 1);
+		Btn_ISR_Enable(0, 0, 1, 0);
 		Buzzer_Play(SOUND_PAUSE);
 	}
 	else
@@ -313,6 +313,21 @@ static void Handle_Btn_Pause(void)
 
 static void Handle_Btn_Reset(void)
 {
+	if (is_pause || led_step == LED_STEP0)
+	{
+		btn_state = BTN_RELEASED;
+		Wait_Button_Release(BTN_RESET);
+		if (is_pause)
+		{
+			Btn_ISR_Enable(0, 0, 1, 0);
+		}
+		else if (led_step == LED_STEP0)
+		{
+			Btn_ISR_Enable(1, 0, 0, 0);
+		}
+		return;
+	}
+
 	Btn_ISR_Enable(0, 0, 0, 0);
 	Uart2_Send_String(Uart_Tx_Dataset[3]);
 	Reset_System_State(0);

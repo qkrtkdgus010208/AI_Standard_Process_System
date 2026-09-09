@@ -163,7 +163,7 @@ void Buzzer_Process_Timer(void)
 			}
 			else
 			{
-				Btn_ISR_Enable(0, !is_pause, 1, 1);
+				Btn_ISR_Enable(0, !is_pause, 1, !is_pause);
 			}
 		}
 		return;
