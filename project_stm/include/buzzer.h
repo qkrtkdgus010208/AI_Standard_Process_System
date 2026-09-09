@@ -11,6 +11,7 @@ typedef struct {
 
 typedef enum {
 	SOUND_NONE = 0,
+	SOUND_START,      // 작업 시작 (도 - 미 - 솔)
 	SOUND_PASS,       // 중간 STEP 통과 (도 - 솔)
 	SOUND_FAIL,       // AI 판정 FAIL (저음 경고 2회)
 	SOUND_COMPLETE,   // 모든 STEP 완료 / 작업 정상 종료 (도-미-솔-도 팡파레)

@@ -21,16 +21,33 @@ void Key_Wait_Key_Released(void)
 	while(!Macro_Check_Bit_Set(GPIOC->IDR, 13));
 }
 
-void Btn_ISR_Enable(int check_en, int pause_en, int reset_en)
+void Btn_ISR_Enable(int start_en, int check_en, int pause_en, int reset_en)
 {
 	Macro_Set_Bit(RCC->AHB1ENR, 1);
-	Macro_Write_Block(GPIOB->MODER, 0x3f, 0x00, 2 * BTN_CHECK);
-	Macro_Write_Block(GPIOB->PUPDR, 0x3f, 0x15, 2 * BTN_CHECK);
+	Macro_Write_Block(GPIOB->MODER, 0xff, 0x00, 2 * BTN_START);
+	Macro_Write_Block(GPIOB->PUPDR, 0xff, 0x55, 2 * BTN_START);
 	Macro_Set_Bit(RCC->APB2ENR, 14);
+
+	if(start_en)
+	{
+		Macro_Write_Block(SYSCFG->EXTICR[0], 0xf, 0x1, BTN_START * 4);
+		Macro_Set_Bit(EXTI->FTSR, BTN_START);
+		EXTI->PR = (0x1 << BTN_START);
+		NVIC_ClearPendingIRQ(BTN_START_IRQN);
+		Macro_Set_Bit(EXTI->IMR, BTN_START);
+		NVIC_EnableIRQ(BTN_START_IRQN);
+	}
+	else
+	{
+		Macro_Clear_Bit(EXTI->IMR, BTN_START);
+		NVIC_DisableIRQ(BTN_START_IRQN);
+		EXTI->PR = (0x1 << BTN_START);
+		NVIC_ClearPendingIRQ(BTN_START_IRQN);
+	}
 
 	if(check_en)
 	{
-		Macro_Write_Block(SYSCFG->EXTICR[0], 0xf, 0x1, 3 * 4);
+		Macro_Write_Block(SYSCFG->EXTICR[0], 0xf, 0x1, BTN_CHECK * 4);
 		Macro_Set_Bit(EXTI->FTSR, BTN_CHECK);
 		EXTI->PR = (0x1 << BTN_CHECK);
 		NVIC_ClearPendingIRQ(BTN_CHECK_IRQN);
@@ -82,12 +99,20 @@ void Btn_ISR_Enable(int check_en, int pause_en, int reset_en)
 volatile btn_status_t btn_state = BTN_RELEASED;
 volatile uint8_t is_pause = 0;
 
+void EXTI2_IRQHandler(void)
+{
+	EXTI->PR = (0x1 << BTN_START);
+	NVIC_ClearPendingIRQ(BTN_START_IRQN);
+	btn_state = BTN_START_PRESSED;
+	Btn_ISR_Enable(0, 0, 0, 0);
+}
+
 void EXTI3_IRQHandler(void)
 {
 	EXTI->PR = (0x1 << BTN_CHECK);
 	NVIC_ClearPendingIRQ(BTN_CHECK_IRQN);
 	btn_state = BTN_CHECK_PRESSED;
-	Btn_ISR_Enable(0, 0, 0);
+	Btn_ISR_Enable(0, 0, 0, 0);
 }
 
 void EXTI4_IRQHandler(void)
@@ -103,6 +128,6 @@ void EXTI9_5_IRQHandler(void)
 {
 	EXTI->PR = (0x1 << BTN_RESET);
 	NVIC_ClearPendingIRQ(BTN_RESET_IRQN);
-	Btn_ISR_Enable(0, 0, 0);
+	Btn_ISR_Enable(0, 0, 0, 0);
 	btn_state = BTN_RESET_PRESSED;
 }

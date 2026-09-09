@@ -17,7 +17,8 @@ static const char *Uart_Tx_Dataset[] = {
 	"Check\n",
 	"Pause\n",
 	"Resume\n",
-	"Reset\n"
+	"Reset\n",
+	"Start\n"
 };
 
 /* ── 함수 전방 선언 (Forward Declarations) ───────────────────────────── */
@@ -100,11 +101,14 @@ static void Reset_System_State(uint8_t clear_fail_led);
 
 static void Handle_Uart_Start(void)
 {
-	Btn_ISR_Enable(1, 1, 1);
+	Btn_ISR_Enable(0, 1, 1, 1);
 	led_step = LED_STEP1;
 	Step_LED_On(led_step);
 	Fail_LED_Off();
-	Buzzer_Stop();
+	if (!Buzzer_Is_Playing())
+	{
+		Buzzer_Play(SOUND_START);
+	}
 	is_pause = 0;
 }
 
@@ -146,7 +150,7 @@ static void Handle_Uart_Pause(void)
 	{
 		is_pause = 1;
 		Step_LED_Off(led_step);
-		Btn_ISR_Enable(0, 1, 1);
+		Btn_ISR_Enable(0, 0, 1, 1);
 		Buzzer_Play(SOUND_PAUSE);
 	}
 }
@@ -157,7 +161,7 @@ static void Handle_Uart_Resume(void)
 	{
 		is_pause = 0;
 		Step_LED_On(led_step);
-		Btn_ISR_Enable(1, 1, 1);
+		Btn_ISR_Enable(0, 1, 1, 1);
 		Buzzer_Play(SOUND_RESUME);
 	}
 }
@@ -181,7 +185,7 @@ static void Handle_Uart_Restore(uint8_t target_step)
 	is_pause = 0;
 	btn_state = BTN_RELEASED;
 	Step_LED_On(led_step);
-	Btn_ISR_Enable(1, 1, 1);
+	Btn_ISR_Enable(0, 1, 1, 1);
 }
 
 /* =====================================================================
@@ -204,6 +208,7 @@ static void Process_Buzzer_Timer(void)
  *  [3] 버튼 이벤트 처리 프로세스 (Process_Button_Event)
  * ===================================================================== */
 
+static void Handle_Btn_Start(void);
 static void Handle_Btn_Check(void);
 static void Handle_Btn_Pause(void);
 static void Handle_Btn_Reset(void);
@@ -217,6 +222,9 @@ static void Process_Button_Event(void)
 	switch (btn_state)
 	{
 	case BTN_RELEASED:
+		break;
+	case BTN_START_PRESSED:
+		Handle_Btn_Start();
 		break;
 	case BTN_CHECK_PRESSED:
 		Handle_Btn_Check();
@@ -233,12 +241,29 @@ static void Process_Button_Event(void)
 	}
 }
 
+static void Handle_Btn_Start(void)
+{
+	if (led_step != LED_STEP0)
+	{
+		btn_state = BTN_RELEASED;
+		Wait_Button_Release(BTN_START);
+		Btn_ISR_Enable(0, !is_pause, 1, 1);
+		return;
+	}
+
+	Btn_ISR_Enable(0, 0, 0, 0);
+	Uart2_Send_String(Uart_Tx_Dataset[4]);
+	Buzzer_Play(SOUND_START);
+	Wait_Button_Release(BTN_START);
+	btn_state = BTN_RELEASED;
+}
+
 static void Handle_Btn_Check(void)
 {
 	if (is_pause || led_step == LED_STEP0)
 	{
 		btn_state = BTN_RELEASED;
-		Btn_ISR_Enable(!is_pause, 1, 1);
+		Btn_ISR_Enable(0, !is_pause, 1, 1);
 		return;
 	}
 
@@ -265,7 +290,7 @@ static void Handle_Btn_Pause(void)
 		is_pause = 1;
 		Uart2_Send_String(Uart_Tx_Dataset[1]);
 		Step_LED_Off(led_step);
-		Btn_ISR_Enable(0, 1, 1);
+		Btn_ISR_Enable(0, 0, 1, 1);
 		Buzzer_Play(SOUND_PAUSE);
 	}
 	else
@@ -273,7 +298,7 @@ static void Handle_Btn_Pause(void)
 		is_pause = 0;
 		Uart2_Send_String(Uart_Tx_Dataset[2]);
 		Step_LED_On(led_step);
-		Btn_ISR_Enable(1, 1, 1);
+		Btn_ISR_Enable(0, 1, 1, 1);
 		Buzzer_Play(SOUND_RESUME);
 	}
 
@@ -288,7 +313,7 @@ static void Handle_Btn_Pause(void)
 
 static void Handle_Btn_Reset(void)
 {
-	Btn_ISR_Enable(0, 0, 0);
+	Btn_ISR_Enable(0, 0, 0, 0);
 	Uart2_Send_String(Uart_Tx_Dataset[3]);
 	Reset_System_State(0);
 	Buzzer_Play(SOUND_DEFECT);
@@ -309,6 +334,7 @@ static void Sys_Init(int baud)
 	UART2_RX_Interrupt_Enable(1);
 	Buzzer_Init();
 	Macro_Set_Bit(RCC->APB1ENR, 0); // TIM2 Clock Enable
+	Reset_System_State(1);
 }
 
 /**
@@ -337,5 +363,5 @@ static void Reset_System_State(uint8_t clear_fail_led)
 	led_step = LED_STEP0;
 	btn_state = BTN_RELEASED;
 	is_pause = 0;
-	Btn_ISR_Enable(0, 0, 0);
+	Btn_ISR_Enable(1, 0, 0, 0);
 }

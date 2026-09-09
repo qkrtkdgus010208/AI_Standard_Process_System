@@ -6,6 +6,15 @@
 extern volatile led_step_t led_step;
 extern volatile uint8_t is_pause;
 
+static const SoundNote_t Notes_Start[] = {
+	{523, 100},
+	{0, 30},
+	{659, 100},
+	{0, 30},
+	{784, 180},
+	{0, 0}
+};
+
 static const SoundNote_t Notes_Pass[] = {
 	{1047, 120},
 	{0, 50},
@@ -82,6 +91,10 @@ void Buzzer_Play(SoundId_t sound_id)
 {
 	switch (sound_id)
 	{
+	case SOUND_START:
+		Current_Seq = Notes_Start;
+		Lock_Buttons = 1;
+		break;
 	case SOUND_PASS:
 		Current_Seq = Notes_Pass;
 		Lock_Buttons = 1;
@@ -119,7 +132,7 @@ void Buzzer_Play(SoundId_t sound_id)
 
 	if (Lock_Buttons)
 	{
-		Btn_ISR_Enable(0, 0, 0);
+		Btn_ISR_Enable(0, 0, 0, 0);
 	}
 
 	if (Current_Seq[0].freq > 0)
@@ -146,11 +159,11 @@ void Buzzer_Process_Timer(void)
 		{
 			if (led_step == LED_STEP0)
 			{
-				Btn_ISR_Enable(0, 0, 0);
+				Btn_ISR_Enable(1, 0, 0, 0);
 			}
 			else
 			{
-				Btn_ISR_Enable(!is_pause, 1, 1);
+				Btn_ISR_Enable(0, !is_pause, 1, 1);
 			}
 		}
 		return;
