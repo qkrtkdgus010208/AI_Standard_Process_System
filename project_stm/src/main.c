@@ -105,10 +105,7 @@ static void Handle_Uart_Start(void)
 	led_step = LED_STEP1;
 	Step_LED_On(led_step);
 	Fail_LED_Off();
-	if (!Buzzer_Is_Playing())
-	{
-		Buzzer_Play(SOUND_START);
-	}
+	Buzzer_Play(SOUND_START);
 	is_pause = 0;
 }
 
@@ -247,15 +244,16 @@ static void Handle_Btn_Start(void)
 	{
 		btn_state = BTN_RELEASED;
 		Wait_Button_Release(BTN_START);
-		Btn_ISR_Enable(0, !is_pause, 1, 1);
+		Btn_ISR_Enable(0, !is_pause, 1, !is_pause);
 		return;
 	}
 
-	Btn_ISR_Enable(0, 0, 0, 0);
+	/* Qt 작업자 프로그램으로 'Start\n' 전송.
+	 * 실제 부저음(SOUND_START) 및 STEP 1 LED 점등은 Qt가 'S' 응답을 보낼 때만 발생함. */
 	Uart2_Send_String(Uart_Tx_Dataset[4]);
-	Buzzer_Play(SOUND_START);
 	Wait_Button_Release(BTN_START);
 	btn_state = BTN_RELEASED;
+	Btn_ISR_Enable(1, 0, 0, 0);
 }
 
 static void Handle_Btn_Check(void)
@@ -263,7 +261,14 @@ static void Handle_Btn_Check(void)
 	if (is_pause || led_step == LED_STEP0)
 	{
 		btn_state = BTN_RELEASED;
-		Btn_ISR_Enable(0, !is_pause, 1, 1);
+		if (led_step == LED_STEP0)
+		{
+			Btn_ISR_Enable(1, 0, 0, 0);
+		}
+		else
+		{
+			Btn_ISR_Enable(0, !is_pause, 1, !is_pause);
+		}
 		return;
 	}
 
