@@ -130,14 +130,11 @@ class AiResultDialog(QDialog):
         res_card_layout.addWidget(self.badge_label)
 
         metrics_layout = QHBoxLayout()
-        self.metric_conf = QLabel("신뢰도: 0.0%")
-        self.metric_conf.setStyleSheet("color:#334155; font-size:13px; font-weight:600;")
         self.metric_step = QLabel(f"검사 단계: STEP {self.step_no}")
-        self.metric_step.setStyleSheet("color:#64748B; font-size:13px;")
+        self.metric_step.setStyleSheet("color:#475569; font-size:13px; font-weight:600;")
 
         metrics_layout.addWidget(self.metric_step)
         metrics_layout.addStretch()
-        metrics_layout.addWidget(self.metric_conf)
         res_card_layout.addLayout(metrics_layout)
 
         right_panel.addWidget(result_card, stretch=0)
@@ -178,10 +175,20 @@ class AiResultDialog(QDialog):
         body_layout.addLayout(right_panel, stretch=4)
         main_layout.addLayout(body_layout, stretch=1)
 
+    def _clean_reason_text(self, text: str) -> str:
+        """(x:..., y:...) 또는 (측정:... / 기준:...) 등의 좌표 수치를 사유에서 제거합니다."""
+        if not text:
+            return ""
+        import re
+        # (측정: ...) or (x=..., y=...) or (x:..., y:...) or (기준: ...) or (actual=...)
+        cleaned = re.sub(r"\s*\([^)]*(?:x[:=]|y[:=]|측정|기준|actual|expected)[^)]*\)", "", text)
+        # (0.00, 0.00) or (-0.12, 0.34)
+        cleaned = re.sub(r"\s*\([+-]?\d+\.?\d*,\s*[+-]?\d+\.?\d*\)", "", cleaned)
+        return cleaned.strip()
+
     def _populate_data(self) -> None:
         """전달받은 판정 결과를 UI 위젯들에 바인딩합니다."""
         is_pass = str(getattr(self.result, "result", "")).upper() == "PASS"
-        confidence = float(getattr(self.result, "confidence", 0.0))
         reasons = getattr(self.result, "reasons", [])
         detail = getattr(self.result, "detail", "")
         annotated_frame = getattr(self.result, "annotated_frame", None)
@@ -200,8 +207,6 @@ class AiResultDialog(QDialog):
                 "border-radius:8px; font-size:32px; font-weight:900; letter-spacing:3px;"
             )
 
-        self.metric_conf.setText(f"AI 신뢰도: {confidence * 100:.1f}%")
-
         # 2. 이미지 바인딩
         if annotated_frame is not None and cv2 is not None:
             self._set_frame_image(annotated_frame)
@@ -209,7 +214,7 @@ class AiResultDialog(QDialog):
             self.image_label.setText("판정 영상 이미지가 없습니다.")
             self.image_label.setStyleSheet("color:#94A3B8; font-size:14px; background:#0F172A;")
 
-        # 3. 사유 목록 바인딩
+        # 3. 사유 목록 바인딩 (좌표 값 제거 적용)
         self.reason_list.clear()
 
         if is_pass:
@@ -222,11 +227,13 @@ class AiResultDialog(QDialog):
 
             if reasons:
                 for reason in reasons:
-                    item = QListWidgetItem(f"   · {reason}")
+                    cleaned = self._clean_reason_text(str(reason))
+                    item = QListWidgetItem(f"   · {cleaned}")
                     item.setForeground(QColor("#2F7651"))
                     self.reason_list.addItem(item)
             elif detail:
-                item = QListWidgetItem(f"   · 세부: {detail}")
+                cleaned = self._clean_reason_text(str(detail))
+                item = QListWidgetItem(f"   · 세부: {cleaned}")
                 item.setForeground(QColor("#334155"))
                 self.reason_list.addItem(item)
         else:
@@ -239,11 +246,13 @@ class AiResultDialog(QDialog):
 
             if reasons:
                 for reason in reasons:
-                    item = QListWidgetItem(f"   · {reason}")
+                    cleaned = self._clean_reason_text(str(reason))
+                    item = QListWidgetItem(f"   · {cleaned}")
                     item.setForeground(QColor("#DC2626"))
                     self.reason_list.addItem(item)
             elif detail:
-                item = QListWidgetItem(f"   · {detail}")
+                cleaned = self._clean_reason_text(str(detail))
+                item = QListWidgetItem(f"   · {cleaned}")
                 item.setForeground(QColor("#DC2626"))
                 self.reason_list.addItem(item)
             else:
@@ -254,14 +263,19 @@ class AiResultDialog(QDialog):
     def _set_frame_image(self, frame) -> None:
         """OpenCV BGR Frame을 QPixmap으로 변환하여 라벨에 맞게 표시합니다."""
         try:
+            self._annotated_frame = frame
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_frame.shape
             bytes_per_line = ch * w
             q_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
             pixmap = QPixmap.fromImage(q_image)
 
+            target_size = self.image_label.contentsRect().size()
+            if target_size.width() <= 10 or target_size.height() <= 10:
+                target_size = self.image_label.size()
+
             scaled_pixmap = pixmap.scaled(
-                self.image_label.size(),
+                target_size,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
@@ -269,8 +283,12 @@ class AiResultDialog(QDialog):
         except Exception as e:
             self.image_label.setText(f"이미지 변환 실패: {e}")
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if hasattr(self, "_annotated_frame") and self._annotated_frame is not None and cv2 is not None:
+            self._set_frame_image(self._annotated_frame)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        annotated_frame = getattr(self.result, "annotated_frame", None)
-        if annotated_frame is not None and cv2 is not None:
-            self._set_frame_image(annotated_frame)
+        if hasattr(self, "_annotated_frame") and self._annotated_frame is not None and cv2 is not None:
+            self._set_frame_image(self._annotated_frame)

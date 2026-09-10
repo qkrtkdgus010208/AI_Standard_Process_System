@@ -75,6 +75,27 @@ class MockJudge(BaseJudge):
         )
 
 
+def _draw_box_label(frame, text: str, bx1: int, by1: int, color: tuple) -> None:
+    """바운딩 박스 라벨을 프레임 가장자리에 잘리지 않도록 안전 여백(최소 x=60)을 두고 배경 상자와 함께 표시합니다."""
+    if cv2 is None or frame is None:
+        return
+    fh, fw = frame.shape[:2]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.55
+    thickness = 2
+    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+    tx = max(60, min(fw - tw - 20, bx1))
+    ty = max(th + 20, min(fh - 20, by1 - 8))
+    cv2.rectangle(
+        frame,
+        (tx - 4, ty - th - 4),
+        (tx + tw + 4, ty + baseline + 2),
+        (0, 0, 0),
+        -1,
+    )
+    cv2.putText(frame, text, (tx, ty), font, scale, color, thickness)
+
+
 class TensorRTJudge(BaseJudge):
     """YOLO TensorRT 엔진 및 recipe.json 기반 실제 조립 공정 정밀 검사 판정기입니다."""
 
@@ -153,15 +174,7 @@ class TensorRTJudge(BaseJudge):
                 if cv2 is not None:
                     bx1, by1, bx2, by2 = map(int, box)
                     cv2.rectangle(annotated_frame, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
-                    cv2.putText(
-                        annotated_frame,
-                        cname,
-                        (bx1, max(20, by1 - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        (0, 255, 0),
-                        2,
-                    )
+                    _draw_box_label(annotated_frame, cname, bx1, by1, (0, 255, 0))
             return JudgeResult(
                 "PASS",
                 0.95,
@@ -178,37 +191,21 @@ class TensorRTJudge(BaseJudge):
         reference = find_by_class(detections, ref_cid) if ref_cid is not None else None
 
         fail_reasons = []
+        fail_reasons_ascii = []
         pass_details = []
         confidences = []
 
         # 2. Reference 검출 여부 확인
         if reference is None:
             fail_reasons.append(f"기준 부품(Reference) 미검출: {reference_name}")
-            if cv2 is not None:
-                cv2.putText(
-                    annotated_frame,
-                    f"REF MISSING: {reference_name}",
-                    (20, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1.0,
-                    (0, 0, 255),
-                    2,
-                )
+            fail_reasons_ascii.append(f"REF MISSING: {reference_name}")
         else:
             confidences.append(reference.get("confidence", 0.9))
             rx1, ry1, rx2, ry2 = map(int, reference["bbox"])
             if cv2 is not None:
                 # Reference: 파란색 바운딩 박스
                 cv2.rectangle(annotated_frame, (rx1, ry1), (rx2, ry2), (255, 0, 0), 2)
-                cv2.putText(
-                    annotated_frame,
-                    f"REF: {reference_name}",
-                    (rx1, max(20, ry1 - 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (255, 0, 0),
-                    2,
-                )
+                _draw_box_label(annotated_frame, f"REF: {reference_name}", rx1, ry1, (255, 120, 0))
 
             # 3. 각 Target 부품 검사
             for target_config in target_configs:
@@ -226,6 +223,9 @@ class TensorRTJudge(BaseJudge):
                 if len(targets) < required_count:
                     fail_reasons.append(
                         f"부품 누락: {target_name} (검출 {len(targets)} / 필요 {required_count})"
+                    )
+                    fail_reasons_ascii.append(
+                        f"MISSING: {target_name} ({len(targets)}/{required_count})"
                     )
                     continue
 
@@ -253,6 +253,7 @@ class TensorRTJudge(BaseJudge):
 
                     if matched_results is None:
                         fail_reasons.append(f"위치 매칭 실패: {target_name}")
+                        fail_reasons_ascii.append(f"MATCH FAIL: {target_name}")
                         continue
 
                     for i, pos in enumerate(positions):
@@ -272,27 +273,16 @@ class TensorRTJudge(BaseJudge):
                         bx1, by1, bx2, by2 = map(int, t_box)
 
                         if pos_ok:
-                            pass_details.append(
-                                f"{target_name}[{i+1}] 위치 정상 (x={rel_x:.3f}, y={rel_y:.3f})"
-                            )
+                            pass_details.append(f"{target_name}[{i+1}] 위치 정상")
                             color = (0, 255, 0)
                         else:
-                            fail_reasons.append(
-                                f"{target_name}[{i+1}] 위치 오차 초과 (측정: x={rel_x:.3f}, y={rel_y:.3f} / 기준: x={pos['expected_x']:.3f}, y={pos['expected_y']:.3f})"
-                            )
+                            fail_reasons.append(f"{target_name}[{i+1}] 조립 위치 오차 초과")
+                            fail_reasons_ascii.append(f"POS ERROR: {target_name}[{i+1}]")
                             color = (0, 0, 255)
 
                         if cv2 is not None:
                             cv2.rectangle(annotated_frame, (bx1, by1), (bx2, by2), color, 2)
-                            cv2.putText(
-                                annotated_frame,
-                                f"{target_name}[{i+1}]",
-                                (bx1, max(20, by1 - 8)),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.5,
-                                color,
-                                2,
-                            )
+                            _draw_box_label(annotated_frame, f"{target_name}[{i+1}]", bx1, by1, color)
 
                 # 단일 위치 검사
                 else:
@@ -316,27 +306,16 @@ class TensorRTJudge(BaseJudge):
 
                     bx1, by1, bx2, by2 = map(int, best_result["target"]["bbox"])
                     if pos_ok:
-                        pass_details.append(
-                            f"{target_name} 위치 정상 (x={rel_x:.3f}, y={rel_y:.3f})"
-                        )
+                        pass_details.append(f"{target_name} 위치 정상")
                         color = (0, 255, 0)
                     else:
-                        fail_reasons.append(
-                            f"{target_name} 위치 오차 초과 (측정: x={rel_x:.3f}, y={rel_y:.3f} / 기준: x={exp_x:.3f}, y={exp_y:.3f})"
-                        )
+                        fail_reasons.append(f"{target_name} 조립 위치 오차 초과")
+                        fail_reasons_ascii.append(f"POS ERROR: {target_name}")
                         color = (0, 0, 255)
 
                     if cv2 is not None:
                         cv2.rectangle(annotated_frame, (bx1, by1), (bx2, by2), color, 2)
-                        cv2.putText(
-                            annotated_frame,
-                            target_name,
-                            (bx1, max(20, by1 - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5,
-                            color,
-                            2,
-                        )
+                        _draw_box_label(annotated_frame, target_name, bx1, by1, color)
 
         # 4. 최종 판정 및 화면 시각화
         avg_conf = sum(confidences) / len(confidences) if confidences else 0.90
@@ -345,41 +324,55 @@ class TensorRTJudge(BaseJudge):
             final_res = "PASS"
             detail = f"STEP {step_no} 정상 조립 확인 (검증 항목: {len(pass_details)}건)"
             if cv2 is not None:
+                # 좌측 여백(x1=60, y1=40)을 두어 글씨가 좌측 테두리에 짤리지 않도록 보정
+                cv2.rectangle(annotated_frame, (60, 40), (250, 110), (0, 0, 0), -1)
+                cv2.rectangle(annotated_frame, (60, 40), (250, 110), (0, 255, 0), 3)
                 cv2.putText(
                     annotated_frame,
                     "PASS",
-                    (30, 60),
+                    (88, 92),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    1.8,
+                    1.4,
                     (0, 255, 0),
-                    4,
+                    3,
                 )
             reasons = pass_details if pass_details else ["모든 조립 기준 적합"]
         else:
             final_res = "FAIL"
             detail = f"STEP {step_no} 불량: {fail_reasons[0]}"
             if cv2 is not None:
+                # 좌측 여백(x1=60, y1=40)을 두어 글씨가 좌측 테두리에 짤리지 않도록 보정
+                cv2.rectangle(annotated_frame, (60, 40), (250, 110), (0, 0, 0), -1)
+                cv2.rectangle(annotated_frame, (60, 40), (250, 110), (0, 0, 255), 3)
                 cv2.putText(
                     annotated_frame,
                     "FAIL",
-                    (30, 60),
+                    (92, 92),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    1.8,
+                    1.4,
                     (0, 0, 255),
-                    4,
+                    3,
                 )
-                y_pos = 100
-                for r in fail_reasons[:3]:
+                y_pos = 150
+                for r in fail_reasons_ascii[:3]:
+                    (rw, rh), baseline = cv2.getTextSize(r, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                    cv2.rectangle(
+                        annotated_frame,
+                        (60, y_pos - rh - 4),
+                        (65 + rw, y_pos + baseline + 2),
+                        (0, 0, 0),
+                        -1,
+                    )
                     cv2.putText(
                         annotated_frame,
                         r,
-                        (30, y_pos),
+                        (65, y_pos),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6,
                         (0, 0, 255),
                         2,
                     )
-                    y_pos += 30
+                    y_pos += 36
             reasons = fail_reasons
 
         return JudgeResult(
