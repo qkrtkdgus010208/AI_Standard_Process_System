@@ -1,5 +1,6 @@
 """USB/CSI/Mock Camera Frame을 별도 Thread에서 읽는 모듈입니다."""
 
+import subprocess
 import time
 from typing import Optional
 
@@ -118,6 +119,31 @@ class CameraThread(QThread):
                     pass
             self._capture = None
 
+    def _apply_v4l2_ctl(self, device_path: Optional[str] = None) -> None:
+        """C270 카메라 하드웨어 레벨 설정을 위해 v4l2-ctl을 직접 실행합니다."""
+        dev = device_path or getattr(config, "CAMERA_V4L2_DEVICE", f"/dev/video{config.USB_CAMERA_INDEX}")
+        auto_exp = getattr(config, "CAMERA_AUTO_EXPOSURE", 1)
+        exp = getattr(config, "CAMERA_EXPOSURE", 156)
+        contrast = getattr(config, "CAMERA_CONTRAST", 22)
+        sharpness = getattr(config, "CAMERA_SHARPNESS", 255)
+        cmd = [
+            "v4l2-ctl",
+            "-d", dev,
+            "-c", f"auto_exposure={auto_exp}",
+            "-c", f"exposure_time_absolute={exp}",
+            "-c", f"contrast={contrast}",
+            "-c", f"sharpness={sharpness}",
+        ]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            print(f"[Camera] v4l2-ctl 설정 성공 ({dev}): auto_exposure={auto_exp}, exposure={exp}, contrast={contrast}, sharpness={sharpness}")
+        except FileNotFoundError:
+            print("[Camera] v4l2-ctl 명령어를 찾을 수 없습니다. (sudo apt install v4l-utils 권장) OpenCV 속성으로 설정합니다.")
+        except subprocess.CalledProcessError as e:
+            print(f"[Camera] v4l2-ctl 실행 실패 ({dev}): {e.stderr.strip() if e.stderr else e}")
+        except Exception as e:
+            print(f"[Camera] v4l2-ctl 설정 중 예외 발생: {e}")
+
     def _apply_camera_settings(self, capture) -> None:
         """pass_fail_test.py와 동일한 카메라 노출, 대비, 선명도 설정을 적용합니다."""
         auto_exp = getattr(config, "CAMERA_AUTO_EXPOSURE", 1)
@@ -125,7 +151,7 @@ class CameraThread(QThread):
         if not capture.set(cv2.CAP_PROP_AUTO_EXPOSURE, auto_exp):
             capture.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
 
-        exp_val = getattr(config, "CAMERA_EXPOSURE", 150)
+        exp_val = getattr(config, "CAMERA_EXPOSURE", 156)
         # Windows DSHOW의 2의 거듭제곱 값(e.g. -6 = 1/64초)이 입력된 경우
         # Linux V4L2(100us 단위)로 자동 변환: 2^-6 * 10000 ≈ 156
         if exp_val < 0:
@@ -138,6 +164,9 @@ class CameraThread(QThread):
     def _open_capture(self):
         """설정에 따라 USB 또는 CSI Camera 객체를 생성하고 pass_fail_test 설정을 적용합니다."""
         if self.backend == "usb":
+            # 1. C270 하드웨어 직접 v4l2-ctl 제어 (카메라 오픈 전 적용)
+            self._apply_v4l2_ctl()
+
             capture = cv2.VideoCapture(config.USB_CAMERA_INDEX)
             if not capture.isOpened():
                 return capture
@@ -151,11 +180,13 @@ class CameraThread(QThread):
                 capture.read()
 
             self._apply_camera_settings(capture)
+            self._apply_v4l2_ctl()
 
             for _ in range(10):
                 capture.read()
 
             self._apply_camera_settings(capture)
+            self._apply_v4l2_ctl()
 
             return capture
         if self.backend == "csi":

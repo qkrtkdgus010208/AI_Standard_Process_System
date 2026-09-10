@@ -108,8 +108,23 @@ for _ in range(30):
 
 
 # ============================================================
-# 6. 카메라 설정
+# 6. 카메라 설정 (C270 v4l2-ctl 하드웨어 설정)
 # ============================================================
+
+import subprocess
+
+try:
+    subprocess.run([
+        "v4l2-ctl",
+        "-d", "/dev/video0",
+        "-c", "auto_exposure=1",
+        "-c", "exposure_time_absolute=200",
+        "-c", "contrast=22",
+        "-c", "sharpness=255"
+    ], check=True)
+    print("[Camera] v4l2-ctl C270 카메라 설정 적용 완료")
+except Exception as e:
+    print(f"[Camera] v4l2-ctl 설정 건너뜀/실패 (OpenCV 설정 유지): {e}")
 
 cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
 

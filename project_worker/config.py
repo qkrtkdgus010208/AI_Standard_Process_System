@@ -29,10 +29,11 @@ CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 CAMERA_FPS = 30
 
-# pass_fail_test.py 카메라 파라미터 설정
-# Windows(CAP_DSHOW)의 -6은 2^-6 = 약 1/64초이며, Linux V4L2(100us 단위)에서는 150~156이 동일한 적정 노출입니다.
+# pass_fail_test.py / C270 웹캠 파라미터 설정 (v4l2-ctl 연동)
+# Linux V4L2(100us 단위)에서 156 = 15.6ms ≈ 1/64초
+CAMERA_V4L2_DEVICE = "/dev/video0"
 CAMERA_AUTO_EXPOSURE = 1   # 1: 수동 노출(Manual), 3: 자동 노출(Auto)
-CAMERA_EXPOSURE = 150      # 적정 셔터 노출값 (150 ≈ 1/66초)
+CAMERA_EXPOSURE = 156      # 적정 셔터 노출값 (156 = 15.6ms ≈ 1/64초)
 CAMERA_CONTRAST = 22
 CAMERA_SHARPNESS = 255
 CAMERA_FLIP = True  # pass_fail_test.py 데이터셋 촬영 방향과 동일한 상하좌우 반전 (flipCode=-1)
