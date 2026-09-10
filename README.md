@@ -78,23 +78,40 @@ flowchart TD
 
 ## 4. 빠른 시작
 
-### 4.1 STM32 펌웨어 빌드 및 플래싱
+### 4.0 환경 준비 (사전 설치)
+Linux/Ubuntu 환경에서 웹캠 하드웨어 제어 및 GUI 라이브러리를 위해 사전 설치를 권장합니다:
+```bash
+sudo apt update && sudo apt install -y v4l-utils libgl1-mesa-glx libglib2.0-0
+```
+
+### 4.1 의존성 패키지 설치 (프로젝트 루트 기준)
+```bash
+# 가상환경 생성 및 활성화
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+
+# 실행용 패키지 전체 설치
+pip install -r requirements.txt
+
+# (개발 및 테스트용 도구 포함 설치 시)
+# pip install -r requirements-dev.txt
+```
+
+### 4.2 STM32 펌웨어 빌드 및 플래싱
 ```bash
 cd project_stm
 make clean && make
 make run  # ST-LINK로 플래싱
 ```
 
-### 4.2 중앙 관제 프로그램 실행
+### 4.3 중앙 관제 프로그램 (Admin) 실행
 ```bash
 cd project_admin
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
 python3 main.py
 ```
 
-### 4.3 작업자 프로그램 실행
+### 4.4 작업자 프로그램 (Worker) 실행
 ```bash
 cd project_worker
 python3 main.py

@@ -1,0 +1,37 @@
+# ==============================================================================
+# AI Standard Process System - Runtime Dependencies (requirements.txt)
+# ==============================================================================
+# 이 파일은 다른 개발 PC 또는 Jetson 환경에서 프로젝트를 실행하기 위한 필수 패키지 목록입니다.
+#
+# [빠른 설치]
+#   python3 -m venv .venv
+#   source .venv/bin/activate
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# [시스템 패키지 안내 (Ubuntu / Jetson Linux 권장)]
+#   웹캠(C270 등) 하드웨어 제어(v4l2-ctl) 및 GUI 런타임 의존성:
+#   sudo apt update && sudo apt install -y v4l-utils libgl1-mesa-glx libglib2.0-0
+#
+# [NVIDIA Jetson 환경 배포 시 참고사항]
+#   JetPack(L4T) 환경에서는 PyTorch(torch, torchvision) 및 TensorRT(tensorrt)가
+#   시스템 패키지 또는 NVIDIA 전용 휠로 사전 제공됩니다.
+#   PyQt5/OpenCV 설치 속도 및 호환성을 위해 아래 apt 설치를 권장합니다:
+#   sudo apt install -y python3-pyqt5 python3-opencv python3-serial python3-numpy
+# ==============================================================================
+
+# GUI Framework (Admin 관제 PC & Worker 작업자 단말 공통)
+PyQt5>=5.15.6,<6.0.0
+
+# Computer Vision & Image Processing
+opencv-python>=4.8.0
+numpy>=1.23.0,<2.0.0
+
+# AI Vision Inspection (YOLO & 추론 엔진 로더)
+ultralytics>=8.0.0
+
+# Hardware Serial Communication (STM32F411 UART 연동)
+pyserial>=3.5
+
+# Typing & Utility Compatibility
+typing_extensions>=4.5.0

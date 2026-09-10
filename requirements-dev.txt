@@ -1,0 +1,23 @@
+# ==============================================================================
+# AI Standard Process System - Development Dependencies (requirements-dev.txt)
+# ==============================================================================
+# 개발 PC에서 시뮬레이션(TEST_MODE), 단위 테스트, 코드 검증 등을 수행할 때 사용합니다.
+#
+# [설치 명령]
+#   python3 -m venv .venv
+#   source .venv/bin/activate
+#   pip install --upgrade pip
+#   pip install -r requirements-dev.txt
+# ==============================================================================
+
+# 기본 런타임 의존성 포함
+-r requirements.txt
+
+# Testing Frameworks
+pytest>=7.0.0
+pytest-qt>=4.2.0
+pytest-cov>=4.0.0
+
+# Code Quality & Formatting
+flake8>=6.0.0
+black>=23.0.0
