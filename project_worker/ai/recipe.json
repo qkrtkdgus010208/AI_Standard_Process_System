@@ -1,0 +1,124 @@
+{
+    "1": {
+        "reference": "car_base",
+        "targets": [
+            {
+                "class": "rear_bumper",
+                "expected_x": -0.5333,
+                "expected_y": -0.0351,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            }
+        ]
+    },
+    "2": {
+        "reference": "car_base",
+        "targets": [
+            {
+                "class": "front_bumper",
+                "expected_x": 0.5221,
+                "expected_y": -0.0283,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            }
+        ]
+    },
+    "3": {
+        "reference": "car_base",
+        "targets": [
+            {
+                "class": "driver_seat",
+                "expected_x": -0.2456,
+                "expected_y": -0.1633,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            },
+            {
+                "class": "steering_wheel",
+                "expected_x": -0.0627,
+                "expected_y": -0.2427,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            },
+            {
+                "class": "red_black_block_1x2",
+                "expected_x": 0.0601,
+                "expected_y": -0.1894,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            }
+        ]
+    },
+    "4": {
+        "reference": "front_bumper",
+        "targets": [
+            {
+                "class": "black_L_plate",
+                "required_count": 2,
+                "positions": [
+                    {
+                        "expected_x": -1.3361,
+                        "expected_y": -0.4098,
+                        "tolerance_x": 0.1,
+                        "tolerance_y": 0.1
+                    },
+                    {
+                        "expected_x": -1.1447,
+                        "expected_y": -0.0427,
+                        "tolerance_x": 0.3,
+                        "tolerance_y": 0.1
+                    }
+                ]
+            },
+            {
+                "class": "black_plate_1x6",
+                "required_count": 2,
+                "positions": [
+                    {
+                        "expected_x": -5.0321,
+                        "expected_y": 0.0360,
+                        "tolerance_x": 0.7,
+                        "tolerance_y": 0.1
+                    },
+                    {
+                        "expected_x": -5.0749,
+                        "expected_y": -0.4966,
+                        "tolerance_x": 0.4,
+                        "tolerance_y": 0.1
+                    }
+                ]
+            },
+            {
+                "class": "rear_spoiler",
+                "expected_x": -7.8072,
+                "expected_y": -0.3623,
+                "tolerance_x": 0.9,
+                "tolerance_y": 0.2
+            }
+        ]
+    },
+    "5": {
+        "reference": "driver_seat",
+        "targets": [
+            {
+                "class": "rear_windshield",
+                "expected_x": -0.7889,
+                "expected_y": -0.6066,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            }
+        ]
+    },
+    "6": {
+        "reference": "rear_windshield",
+        "targets": [
+            {
+                "class": "front_windshield_roof",
+                "expected_x": 1.9625,
+                "expected_y": 0.0034,
+                "tolerance_x": 0.3,
+                "tolerance_y": 0.1
+            }
+        ]
+    }
+}

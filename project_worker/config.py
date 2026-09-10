@@ -29,6 +29,14 @@ CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 CAMERA_FPS = 30
 
+# pass_fail_test.py 카메라 파라미터 설정
+# Windows(CAP_DSHOW)의 -6은 2^-6 = 약 1/64초이며, Linux V4L2(100us 단위)에서는 150~156이 동일한 적정 노출입니다.
+CAMERA_AUTO_EXPOSURE = 1   # 1: 수동 노출(Manual), 3: 자동 노출(Auto)
+CAMERA_EXPOSURE = 150      # 적정 셔터 노출값 (150 ≈ 1/66초)
+CAMERA_CONTRAST = 22
+CAMERA_SHARPNESS = 255
+CAMERA_FLIP = True  # pass_fail_test.py 데이터셋 촬영 방향과 동일한 상하좌우 반전 (flipCode=-1)
+
 # Jetson CSI Camera용 기본 nvarguscamerasrc Pipeline
 CSI_GSTREAMER_PIPELINE = (
     "nvarguscamerasrc ! "
@@ -38,8 +46,8 @@ CSI_GSTREAMER_PIPELINE = (
     "videoconvert ! video/x-raw, format=(string)BGR ! appsink drop=1"
 )
 
-# AI 설정: 현재는 mock, 이후 pytorch/tensorrt 구현체로 교체 가능
-AI_BACKEND = "mock"
+# AI 설정: tensorrt (실제 yolo26n_fp16.engine 및 recipe.json 기반 검사)
+AI_BACKEND = "tensorrt"
 
 # TEST_MODE용 기본 제품 목록
 DEFAULT_PRODUCTS = [

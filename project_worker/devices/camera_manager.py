@@ -96,6 +96,11 @@ class CameraThread(QThread):
                     self.status_changed.emit("카메라 연결 끊김", False)
                     break
                 self._last_frame_time = time.time()
+
+                # pass_fail_test.py 데이터셋 촬영 방향과 동일하게 상하좌우 반전
+                if getattr(config, "CAMERA_FLIP", False) and frame is not None:
+                    frame = cv2.flip(frame, -1)
+
                 self.frame_ready.emit(frame)
                 # 목표 FPS에서 소요된 시간을 빼고 남은 시간만 대기
                 elapsed = time.time() - loop_start
@@ -113,13 +118,45 @@ class CameraThread(QThread):
                     pass
             self._capture = None
 
+    def _apply_camera_settings(self, capture) -> None:
+        """pass_fail_test.py와 동일한 카메라 노출, 대비, 선명도 설정을 적용합니다."""
+        auto_exp = getattr(config, "CAMERA_AUTO_EXPOSURE", 1)
+        # Windows DSHOW는 0.25, Linux V4L2는 1이 수동(Manual) 노출 모드
+        if not capture.set(cv2.CAP_PROP_AUTO_EXPOSURE, auto_exp):
+            capture.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+
+        exp_val = getattr(config, "CAMERA_EXPOSURE", 150)
+        # Windows DSHOW의 2의 거듭제곱 값(e.g. -6 = 1/64초)이 입력된 경우
+        # Linux V4L2(100us 단위)로 자동 변환: 2^-6 * 10000 ≈ 156
+        if exp_val < 0:
+            exp_val = max(1, int(round((2 ** exp_val) * 10000)))
+
+        capture.set(cv2.CAP_PROP_EXPOSURE, exp_val)
+        capture.set(cv2.CAP_PROP_CONTRAST, getattr(config, "CAMERA_CONTRAST", 22))
+        capture.set(cv2.CAP_PROP_SHARPNESS, getattr(config, "CAMERA_SHARPNESS", 255))
+
     def _open_capture(self):
-        """설정에 따라 USB 또는 CSI Camera 객체를 생성합니다."""
+        """설정에 따라 USB 또는 CSI Camera 객체를 생성하고 pass_fail_test 설정을 적용합니다."""
         if self.backend == "usb":
             capture = cv2.VideoCapture(config.USB_CAMERA_INDEX)
+            if not capture.isOpened():
+                return capture
+
             capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
             capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
             capture.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
+
+            # pass_fail_test.py와 동일한 카메라 초기화 시퀀스
+            for _ in range(30):
+                capture.read()
+
+            self._apply_camera_settings(capture)
+
+            for _ in range(10):
+                capture.read()
+
+            self._apply_camera_settings(capture)
+
             return capture
         if self.backend == "csi":
             return cv2.VideoCapture(config.CSI_GSTREAMER_PIPELINE, cv2.CAP_GSTREAMER)

@@ -15,6 +15,7 @@ import config
 from services.auth_manager import WorkerSession
 from devices.ai_judge import AiInferenceThread, JudgeResult
 from devices.camera_manager import CameraThread
+from ui.dialogs.ai_result_dialog import AiResultDialog
 from services.product_service import ProductInfo, ProductFetchThread, StepGuideFetchThread
 from network.protocol import decode_message_text, parse_message
 from network.server_monitor import ServerMonitor
@@ -276,8 +277,9 @@ class WorkerWindow(QMainWindow):
         self.camera_view.setAlignment(Qt.AlignCenter)
         self.camera_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.camera_view.setMinimumSize(360, 300)
+        self.camera_view.setScaledContents(True)
         self.camera_view.setStyleSheet(
-            "color:#C7D2DC; background:#263746; border:1px solid #BFC9D3; border-radius:7px;"
+            "color:#C7D2DC; background:#1E293B; border:1px solid #BFC9D3; border-radius:7px;"
         )
         camera_panel.addWidget(camera_title)
         camera_panel.addWidget(self.camera_view, 1)
@@ -744,25 +746,22 @@ class WorkerWindow(QMainWindow):
     # ── 카메라 ───────────────────────────────────────────────────────────────
 
     def update_camera_frame(self, frame) -> None:
-        """Camera Thread의 Frame을 화면에 최적화하여 표시하고 최신 Frame을 보관합니다."""
+        """Camera Thread의 Frame을 패널에 빈틈없이 꽉 채워 표시하고 최신 Frame을 보관합니다."""
         self._latest_frame = frame
         if frame is None:
             return
         if isinstance(frame, QImage):
             self.camera_view.setPixmap(
                 QPixmap.fromImage(frame).scaled(
-                    self.camera_view.size(), Qt.KeepAspectRatio, Qt.FastTransformation
+                    self.camera_view.size(), Qt.IgnoreAspectRatio, Qt.FastTransformation
                 )
             )
         elif cv2 is not None:
             view_size = self.camera_view.size()
             vw, vh = view_size.width(), view_size.height()
             if vw > 10 and vh > 10:
-                fh, fw = frame.shape[:2]
-                scale = min(vw / fw, vh / fh)
-                nw, nh = max(1, int(fw * scale)), max(1, int(fh * scale))
-                resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_LINEAR)
-                qimg = QImage(resized.data, nw, nh, nw * 3, QImage.Format_BGR888)
+                resized = cv2.resize(frame, (vw, vh), interpolation=cv2.INTER_LINEAR)
+                qimg = QImage(resized.data, vw, vh, vw * 3, QImage.Format_BGR888)
                 self.camera_view.setPixmap(QPixmap.fromImage(qimg))
             else:
                 fh, fw, _ = frame.shape
@@ -802,7 +801,7 @@ class WorkerWindow(QMainWindow):
     # ── AI 판정 ──────────────────────────────────────────────────────────────
 
     def request_ai_judgement(self) -> None:
-        """최신 Frame을 AI Thread에 전달하고 UI는 즉시 반환합니다."""
+        """최신 Frame과 현재 STEP을 AI Thread에 전달하고 UI는 즉시 반환합니다."""
         if self._ai_busy:
             self.add_log("warning", "이미 AI 판정이 진행 중입니다.")
             return
@@ -811,19 +810,17 @@ class WorkerWindow(QMainWindow):
             return
         frame = self._latest_frame
         if frame is None:
-            if config.TEST_MODE or config.AI_BACKEND == "mock":
-                import numpy as np
-                frame = np.zeros((720, 1280, 3), dtype=np.uint8) if cv2 else "mock_frame"
-            else:
-                self.add_log("warning", "판정할 Camera Frame이 없습니다.")
-                return
+            self.add_log("warning", "판정할 Camera Frame이 없습니다.")
+            return
+
+        current_step = self.work_controller.snapshot.current_step
         self._ai_busy = True
         self.ai_button.setEnabled(False)
         self.ai_button.setText("판정 중...")
-        self.ai_thread.submit_frame(frame)
+        self.ai_thread.submit_frame(frame, step_no=current_step)
 
     def handle_ai_result(self, result: JudgeResult) -> None:
-        """AI Thread 판정 결과를 Controller에 반영하고 STM32로 P/F/C를 전송합니다."""
+        """AI Thread 판정 결과를 Controller에 반영하고 STM32로 P/F/C를 전송하며 결과 창을 띄웁니다."""
         self._ai_busy = False
         self.ai_button.setText("AI 판정 실행")
         self.ai_button.setEnabled(self.work_controller.snapshot.state == "running")
@@ -832,6 +829,7 @@ class WorkerWindow(QMainWindow):
         # 현재 STEP이 제품의 마지막 STEP인지 확인
         current_step = self.work_controller.snapshot.current_step
         total_steps = self.work_controller.snapshot.total_steps
+        product_name = self.work_controller.snapshot.product_name
         is_final_step = (current_step >= total_steps)
 
         self.work_controller.apply_judgement(result.result, result.detail)
@@ -847,6 +845,18 @@ class WorkerWindow(QMainWindow):
                 self.stm.send_pass()
         else:
             self.stm.send_fail()
+
+        # AI 판정 결과 팝업 창 표시 (좌측: 박스 친 사진, 우측 상단: 결과, 우측 하단: 판정 이유)
+        try:
+            dialog = AiResultDialog(
+                result=result,
+                step_no=current_step,
+                product_name=product_name,
+                parent=self,
+            )
+            dialog.exec_()
+        except Exception as error:
+            self.add_log("error", f"판정 결과 팝업 표시 실패: {error}")
 
     # ── UART / TCP 메시지 처리 ───────────────────────────────────────────────
 
