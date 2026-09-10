@@ -120,6 +120,17 @@ class AdminWindow(QMainWindow):
         refresh_button = QPushButton("새로고침")
         refresh_button.setToolTip("현재 보고 있는 관리 화면의 데이터를 다시 조회합니다.")
         refresh_button.clicked.connect(self.refresh_current_page)
+
+        wipe_button = QPushButton("데이터 초기화")
+        wipe_button.setToolTip("관리자 계정을 제외한 모든 데이터(작업자, 제품, 작업 이력, AI 판정 로그 등)를 영구 삭제합니다.")
+        wipe_button.setStyleSheet(
+            "QPushButton { color:#DC2626; background:#FEF2F2; border:1px solid #FECACA; "
+            "border-radius:6px; font-weight:600; padding:6px 12px; }"
+            "QPushButton:hover { background:#FEE2E2; border-color:#F87171; color:#B91C1C; }"
+            "QPushButton:pressed { background:#FECACA; }"
+        )
+        wipe_button.clicked.connect(self.wipe_system_data)
+
         logout_button = QPushButton("로그아웃")
         logout_button.setObjectName("dangerButton")
         logout_button.clicked.connect(self.logout_requested.emit)
@@ -129,6 +140,8 @@ class AdminWindow(QMainWindow):
         top_layout.addWidget(admin_badge)
         top_layout.addSpacing(8)
         top_layout.addWidget(refresh_button)
+        top_layout.addSpacing(6)
+        top_layout.addWidget(wipe_button)
         top_layout.addSpacing(6)
         top_layout.addWidget(logout_button)
 
@@ -541,7 +554,7 @@ class AdminWindow(QMainWindow):
             QMessageBox.warning(self, "수정 실패", str(error))
 
     def delete_selected_product(self) -> None:
-        """선택한 제품을 확인 후 삭제합니다."""
+        """선택한 제품을 확인 후 삭제합니다 (이력이 있을 경우 이력 포함 삭제 여부 확인)."""
         row = self.product_table.currentRow()
         if row < 0:
             QMessageBox.information(self, "제품 선택", "삭제할 제품을 선택하세요.")
@@ -549,7 +562,7 @@ class AdminWindow(QMainWindow):
         product_id = self.product_table.item(row, 0).text()
         product_name = self.product_table.item(row, 1).text()
         answer = QMessageBox.question(
-            self, "제품 삭제", f"{product_name} ({product_id}) 제품을 삭제하시겠습니까?",
+            self, "제품 삭제", f"'{product_name}' ({product_id}) 제품을 삭제하시겠습니까?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if answer != QMessageBox.Yes:
@@ -558,9 +571,81 @@ class AdminWindow(QMainWindow):
             self.product_service.delete(product_id)
             self.search_products()
         except sqlite3.IntegrityError:
-            QMessageBox.warning(self, "삭제 실패", "작업 이력이 있는 제품은 삭제할 수 없습니다.")
+            cascade_answer = QMessageBox.question(
+                self,
+                "이력 포함 삭제 확인",
+                f"선택한 제품 '{product_name}' ({product_id})은 과거 작업 및 품질 검사 이력이 존재합니다.\n\n"
+                "해당 제품의 모든 작업 이력, AI 판정 로그, 불량 내역도 함께 영구 삭제하시겠습니까?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if cascade_answer == QMessageBox.Yes:
+                try:
+                    self.product_service.delete(product_id, cascade_history=True)
+                    self.search_products()
+                    QMessageBox.information(
+                        self, "삭제 완료", f"'{product_name}' 제품과 관련 작업 이력이 모두 삭제되었습니다."
+                    )
+                except Exception as cascade_error:
+                    QMessageBox.warning(self, "삭제 실패", str(cascade_error))
         except Exception as error:
             QMessageBox.warning(self, "삭제 실패", str(error))
+
+    def wipe_system_data(self) -> None:
+        """관리자 계정을 제외한 모든 데이터(작업자, 제품, 작업 이력, 판정 로그 등)를 영구 삭제합니다."""
+        first_confirm = QMessageBox.warning(
+            self,
+            "⚠️ 시스템 데이터 전체 초기화",
+            "관리자 계정을 제외한 시스템의 모든 데이터가 영구히 삭제됩니다!\n\n"
+            "· 삭제 대상:\n"
+            "  - 모든 작업자(Worker) 계정\n"
+            "  - 모든 등록 제품 및 STEP별 기준 이미지\n"
+            "  - 모든 작업/생산 실적 및 일시중지 기록\n"
+            "  - 모든 AI 품질 판정 로그 및 불량 내역\n\n"
+            "· 보존 대상:\n"
+            "  - 관리자(Admin) 계정\n\n"
+            "정말로 모든 데이터를 초기화하시겠습니까?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if first_confirm != QMessageBox.Yes:
+            return
+
+        final_confirm = QMessageBox.question(
+            self,
+            "최종 확인 (복구 불가)",
+            "삭제된 모든 데이터는 절대 복구할 수 없습니다.\n"
+            "정말로 계속 진행하시겠습니까?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if final_confirm != QMessageBox.Yes:
+            return
+
+        try:
+            counts = self.database_manager.wipe_all_data_except_admin()
+            deleted_workers = counts.get("employees_deleted", 0)
+            deleted_products = counts.get("products", 0)
+            deleted_runs = counts.get("product_runs", 0)
+            deleted_judgements = counts.get("judgement_logs", 0)
+            deleted_defects = counts.get("defect_logs", 0)
+
+            summary_msg = (
+                "관리자 계정을 제외한 모든 데이터가 성공적으로 초기화되었습니다.\n\n"
+                f"· 삭제된 작업자 계정: {deleted_workers}명\n"
+                f"· 삭제된 제품: {deleted_products}개\n"
+                f"· 삭제된 작업 이력: {deleted_runs}건\n"
+                f"· 삭제된 AI 판정 로그: {deleted_judgements}건\n"
+                f"· 삭제된 불량 내역: {deleted_defects}건"
+            )
+            QMessageBox.information(self, "초기화 완료", summary_msg)
+
+            # UI 화면 갱신
+            self.refresh_current_page()
+            self.search_employees()
+            self.search_products()
+        except Exception as error:
+            QMessageBox.critical(self, "초기화 실패", f"데이터 초기화 중 오류가 발생했습니다:\n{error}")
 
     def open_worker_registration(self) -> None:
         """작업자 계정 등록 Dialog의 입력값을 저장합니다."""

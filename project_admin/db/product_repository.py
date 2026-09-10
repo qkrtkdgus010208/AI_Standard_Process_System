@@ -103,9 +103,29 @@ class ProductRepository:
                 raise ValueError("수정할 제품을 찾을 수 없습니다.")
             connection.execute("DELETE FROM product_step_guides WHERE product_id = ? AND step_no > ?", (product_id, int(total_steps)))
 
-    def delete_product(self, product_id: str) -> None:
-        """제품과 연결된 기준선·기준 이미지를 삭제합니다."""
+    def delete_product(self, product_id: str, cascade_history: bool = False) -> None:
+        """제품과 연결된 기준선·기준 이미지를 삭제합니다 (cascade_history가 True이면 관련 작업 이력도 함께 삭제)."""
         with self.connect() as connection:
+            if cascade_history:
+                run_rows = connection.execute(
+                    "SELECT product_run_id FROM product_runs WHERE product_id = ?", (product_id,)
+                ).fetchall()
+                run_ids = [row[0] for row in run_rows]
+                if run_ids:
+                    placeholders = ",".join("?" for _ in run_ids)
+                    step_rows = connection.execute(
+                        f"SELECT step_run_id FROM step_runs WHERE product_run_id IN ({placeholders})", run_ids
+                    ).fetchall()
+                    step_ids = [row[0] for row in step_rows]
+                    if step_ids:
+                        step_placeholders = ",".join("?" for _ in step_ids)
+                        connection.execute(f"DELETE FROM judgement_logs WHERE step_run_id IN ({step_placeholders})", step_ids)
+                        connection.execute(f"DELETE FROM defect_logs WHERE step_run_id IN ({step_placeholders})", step_ids)
+                        connection.execute(f"DELETE FROM pause_logs WHERE step_run_id IN ({step_placeholders})", step_ids)
+                        connection.execute(f"DELETE FROM step_runs WHERE product_run_id IN ({placeholders})", run_ids)
+                    connection.execute("DELETE FROM product_runs WHERE product_id = ?", (product_id,))
+                connection.execute("DELETE FROM worker_state_events WHERE product_id = ?", (product_id,))
+
             connection.execute("DELETE FROM product_step_guides WHERE product_id = ?", (product_id,))
             connection.execute("DELETE FROM product_quality_baselines WHERE product_id = ?", (product_id,))
             cursor = connection.execute("DELETE FROM products WHERE product_id = ?", (product_id,))

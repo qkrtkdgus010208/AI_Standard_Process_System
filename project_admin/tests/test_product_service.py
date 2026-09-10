@@ -29,7 +29,7 @@ class FakeProductDatabase:
     def update_product(self, **kwargs) -> None:
         self.calls.append(("update_product", kwargs))
 
-    def delete_product(self, product_id: str) -> None:
+    def delete_product(self, product_id: str, cascade_history: bool = False) -> None:
         self.calls.append(("delete_product", product_id))
 
     def replace_product_step_guides(self, product_id: str, guides: list[dict]) -> None:

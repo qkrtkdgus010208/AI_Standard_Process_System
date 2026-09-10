@@ -62,9 +62,12 @@ class ProductService:
         )
         self._replace_step_images(product_id, data.get("step_images") or {})
 
-    def delete(self, product_id: str) -> None:
+    def delete(self, product_id: str, cascade_history: bool = False) -> None:
         """제품과 연결된 기준 이미지 메타데이터 및 파일을 삭제합니다."""
-        self.database_manager.delete_product(product_id)
+        if cascade_history:
+            self.database_manager.delete_product(product_id, cascade_history=True)
+        else:
+            self.database_manager.delete_product(product_id)
         self._delete_unused_images(product_id, set())
 
     def get_for_edit(self, product_id: str) -> dict[str, Any] | None:

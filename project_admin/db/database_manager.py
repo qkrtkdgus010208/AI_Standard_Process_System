@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import shutil
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -154,8 +155,64 @@ class DatabaseManager:
     def update_product(self, product_id: str, product_name: str, total_steps: int) -> None:
         return self._product_repository.update_product(product_id, product_name, total_steps)
 
-    def delete_product(self, product_id: str) -> None:
-        return self._product_repository.delete_product(product_id)
+    def delete_product(self, product_id: str, cascade_history: bool = False) -> None:
+        return self._product_repository.delete_product(product_id, cascade_history=cascade_history)
+
+    def wipe_all_data_except_admin(self) -> dict[str, int]:
+        """관리자 계정을 제외한 모든 데이터(작업자 계정, 제품, 기준 이미지, 작업 이력, 판정 로그 등)를 영구 삭제합니다."""
+        counts = {}
+        with self.connect() as connection:
+            connection.execute("PRAGMA foreign_keys = OFF")
+            try:
+                tables_to_clear = [
+                    "judgement_logs",
+                    "defect_logs",
+                    "pause_logs",
+                    "step_runs",
+                    "product_runs",
+                    "work_sessions",
+                    "worker_state_events",
+                    "product_step_guides",
+                    "product_quality_baselines",
+                    "products",
+                ]
+                for table in tables_to_clear:
+                    cursor = connection.execute(f"DELETE FROM {table}")
+                    counts[table] = cursor.rowcount
+
+                # 관리자 계정(role == 'admin')만 남기고 일반 작업자 계정 삭제
+                cursor = connection.execute("DELETE FROM employees WHERE role != 'admin' OR role IS NULL")
+                counts["employees_deleted"] = cursor.rowcount
+
+                # legacy 테이블이 존재할 경우 정리
+                connection.execute("DROP TABLE IF EXISTS judgement_logs_legacy")
+
+                # AUTOINCREMENT 시퀀스 초기화 (employees 제외)
+                connection.execute("DELETE FROM sqlite_sequence WHERE name != 'employees'")
+
+                # 관리자 계정이 하나도 없으면 기본 관리자 계정 복구
+                admin_exists = connection.execute(
+                    "SELECT 1 FROM employees WHERE role = 'admin' LIMIT 1"
+                ).fetchone()
+                if not admin_exists:
+                    connection.execute(
+                        "INSERT INTO employees(employee_id, name, password_hash, role) VALUES (?, ?, ?, ?)",
+                        ("admin", "관리자", self.hash_password("admin1234"), "admin"),
+                    )
+                    counts["default_admin_created"] = 1
+            finally:
+                connection.execute("PRAGMA foreign_keys = ON")
+
+        # 기준 이미지 파일 디렉토리 전체 정리
+        image_dir = config.STEP_GUIDE_IMAGE_DIR
+        if image_dir.exists():
+            for child in image_dir.iterdir():
+                if child.is_file():
+                    child.unlink(missing_ok=True)
+                elif child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
+
+        return counts
 
     def get_work_sessions(self, employee_id: str) -> list[dict]:
         return self._work_history_repository.get_work_sessions(employee_id)
