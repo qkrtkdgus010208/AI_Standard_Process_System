@@ -5,6 +5,7 @@
 우측 하단에는 세부 항목별 판정 사유를 보기 쉽게 표시합니다.
 """
 
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -19,6 +20,9 @@ try:
     import cv2
 except ImportError:
     cv2 = None
+
+_RE_COORD_LABELED = re.compile(r"\s*\([^)]*(?:x[:=]|y[:=]|측정|기준|actual|expected)[^)]*\)")
+_RE_COORD_NUMERIC = re.compile(r"\s*\([+-]?\d+\.?\d*,\s*[+-]?\d+\.?\d*\)")
 
 
 class AiResultDialog(QDialog):
@@ -179,11 +183,8 @@ class AiResultDialog(QDialog):
         """(x:..., y:...) 또는 (측정:... / 기준:...) 등의 좌표 수치를 사유에서 제거합니다."""
         if not text:
             return ""
-        import re
-        # (측정: ...) or (x=..., y=...) or (x:..., y:...) or (기준: ...) or (actual=...)
-        cleaned = re.sub(r"\s*\([^)]*(?:x[:=]|y[:=]|측정|기준|actual|expected)[^)]*\)", "", text)
-        # (0.00, 0.00) or (-0.12, 0.34)
-        cleaned = re.sub(r"\s*\([+-]?\d+\.?\d*,\s*[+-]?\d+\.?\d*\)", "", cleaned)
+        cleaned = _RE_COORD_LABELED.sub("", text)
+        cleaned = _RE_COORD_NUMERIC.sub("", cleaned)
         return cleaned.strip()
 
     def _populate_data(self) -> None:
@@ -268,27 +269,30 @@ class AiResultDialog(QDialog):
             h, w, ch = rgb_frame.shape
             bytes_per_line = ch * w
             q_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(q_image)
-
-            target_size = self.image_label.contentsRect().size()
-            if target_size.width() <= 10 or target_size.height() <= 10:
-                target_size = self.image_label.size()
-
-            scaled_pixmap = pixmap.scaled(
-                target_size,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
-            )
-            self.image_label.setPixmap(scaled_pixmap)
+            self._cached_pixmap = QPixmap.fromImage(q_image)
+            self._update_scaled_image()
         except Exception as e:
             self.image_label.setText(f"이미지 변환 실패: {e}")
 
+    def _update_scaled_image(self) -> None:
+        """캐시된 Pixmap을 현재 라벨 크기에 맞추어 부드럽게 스케일링합니다."""
+        if not hasattr(self, "_cached_pixmap") or self._cached_pixmap is None or self._cached_pixmap.isNull():
+            return
+        target_size = self.image_label.contentsRect().size()
+        if target_size.width() <= 10 or target_size.height() <= 10:
+            target_size = self.image_label.size()
+
+        scaled_pixmap = self._cached_pixmap.scaled(
+            target_size,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        self.image_label.setPixmap(scaled_pixmap)
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        if hasattr(self, "_annotated_frame") and self._annotated_frame is not None and cv2 is not None:
-            self._set_frame_image(self._annotated_frame)
+        self._update_scaled_image()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if hasattr(self, "_annotated_frame") and self._annotated_frame is not None and cv2 is not None:
-            self._set_frame_image(self._annotated_frame)
+        self._update_scaled_image()

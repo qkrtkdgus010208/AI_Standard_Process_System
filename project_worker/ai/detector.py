@@ -1,4 +1,3 @@
-from pathlib import Path
 from ultralytics import YOLO
 
 DEFAULT_NAMES = {
@@ -19,7 +18,7 @@ DEFAULT_NAMES = {
 class Detector:
     def __init__(self, model_path):
         self.model = YOLO(str(model_path), task="detect")
-        self.names = DEFAULT_NAMES
+        self.names = getattr(self.model, "names", DEFAULT_NAMES) or DEFAULT_NAMES
 
     def detect(self, frame):
         results = self.model(frame, imgsz=640, conf=0.5, verbose=False)

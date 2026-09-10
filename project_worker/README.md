@@ -10,10 +10,16 @@ OOP 원칙(단일 책임 원칙, Facade/Controller 패턴)에 따라 명확히 �
 project_worker/
 ├── main.py                # 프로그램 진입점 및 세션 기반 화면(로그인 ↔ 작업창) 전환
 ├── config.py              # 장치 Port, Backend, 네트워크 등 전역 설정
+├── ai/                    # YOLO 모델 검출, 정규화 및 조립 정합성 검사
+│   ├── detector.py        # YOLOv8 모델 추론 래퍼
+│   ├── normalizer.py      # 기준 부품 대비 상대 좌표 계산
+│   └── inspector.py       # 부품 존재 여부 및 위치 오차 판정
 ├── ui/                    # 작업자 UI 컴포넌트 레이어
 │   ├── worker_window.py   # 작업자 메인 GUI (카메라·STEP 기준 이미지, 상태 표시, 제어 버튼, 로그)
 │   ├── login_window.py    # 작업자 로그인 UI
-│   └── theme.py           # 관리자 프로그램과 통일된 모던 UI 테마
+│   ├── theme.py           # 관리자 프로그램과 통일된 모던 UI 테마
+│   └── dialogs/
+│       └── ai_result_dialog.py # AI 품질 판정 결과 상세 다이얼로그 (바운딩박스 시각화)
 ├── services/              # 비즈니스 로직 및 상태 관리 서비스
 │   ├── auth_manager.py    # 작업자 인증 세션 관리 (WorkerSession, AuthResult, AuthRequestThread)
 │   ├── product_service.py # 제품 목록과 현재 STEP 기준 이미지 비동기 조회 서비스
@@ -29,10 +35,8 @@ project_worker/
 │   ├── protocol.py        # TCP/UART 메시지 파싱 및 Base64 디코딩 (parse_message, decode_message_text)
 │   ├── server_monitor.py  # 관제 PC 서버 연결 주기적 감시 모듈 (ServerMonitor)
 │   └── tcp_server.py      # Monitoring PC 관리자 호출 수신 TCP 서버 (TcpServerThread)
-├── tests/                 # 자동화 단위 테스트
-│   └── test_state_reporter.py
-├── requirements.txt       # Jetson용 Python 필수 패키지 (pyserial, numpy)
-└── requirements-dev.txt   # 일반 개발 PC TEST_MODE용 (PyQt5, opencv-python 포함)
+└── tests/                 # 자동화 단위 테스트
+    └── test_state_reporter.py
 ```
 
 ## 2. 주요 기능 및 아키텍처
@@ -73,28 +77,27 @@ Baudrate: `115200`, Data: `8-N-1`
 
 ## 4. Jetson Orin Nano 설치 및 실행
 
-### 필수 패키지 설치
-```bash
-sudo apt update
-sudo apt install -y python3-pip python3-pyqt5 python3-opencv python3-serial python3-numpy
-python3 -m pip install -r requirements.txt
-```
+> [!IMPORTANT]
+> **모든 프로그램 실행은 반드시 프로젝트 최상위 루트 디렉토리(`AI_Standard_Process_System/`)에서 수행해야 합니다.**  
+> 하위 폴더(`project_worker/`)로 이동하여 실행하지 마십시오.
 
-### 시리얼 포트 권한 설정
-Linux Serial Port 접근을 위해 사용자를 `dialout` 그룹에 추가합니다:
-```bash
-sudo usermod -aG dialout $USER
-# 적용을 위해 로그아웃 후 다시 로그인하거나 재부팅
-```
+UART 시리얼 udev 권한, 가상환경, 의존성 패키지가 없으면 최초 1회 자동 설정 후 즉시 실행됩니다:
 
-### 실행
 ```bash
-python3 main.py
+# 프로젝트 최상위 루트 디렉토리(AI_Standard_Process_System/)에서 실행
+bash run_worker.sh
 ```
 
 ## 5. 개발 환경 테스트 모드 (TEST_MODE)
 
 Jetson/STM32 장비 없이 일반 PC에서 UI 및 네트워크 연동을 테스트할 수 있습니다.
-`config.py`에서 `TEST_MODE = True`로 설정하면 가상 카메라와 Mock AI, 테스트 계정이 활성화됩니다.
+`project_worker/config.py`에서 `TEST_MODE = True`로 설정하면 가상 카메라와 Mock AI, 테스트 계정이 활성화됩니다.
 
 - **테스트 로그인 계정**: 직원번호 `1001`, 비밀번호 `worker1234`
+
+## 6. 자동화 단위 테스트 실행
+
+작업 상태 이벤트 전송 큐 로직 등을 검증하는 단위 테스트입니다. **반드시 프로젝트 최상위 루트 디렉토리에서 실행**합니다:
+```bash
+PYTHONPATH=project_worker python3 -m unittest discover -s project_worker/tests -p "test*.py"
+```

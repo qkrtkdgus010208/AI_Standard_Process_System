@@ -56,6 +56,14 @@ flowchart TD
 | [`project_worker/`](project_worker/) | Jetson Orin Nano / Linux | Python 3, PyQt5, OpenCV | 카메라 영상 표시, AI 판정, 공정 상태 머신, STM32 UART 연동 작업자 앱 | [Worker README](project_worker/README.md) |
 | [`project_admin/`](project_admin/) | 관제 PC / Linux | Python 3, PyQt5, SQLite | 실시간 공정 모니터링, 작업 상태 보존/복원, 계정 및 품질 통계 관제 앱 | [Admin README](project_admin/README.md) |
 
+### 루트 실행 및 환경 구성 파일
+
+| 파일 | 역할 | 설명 |
+|:---|:---|:---|
+| [`run_admin.sh`](run_admin.sh) | 관제 PC 실행 | 가상환경 및 패키지 자동 감지·설치 후 관리자 GUI 즉시 실행 |
+| [`run_worker.sh`](run_worker.sh) | 작업자 앱 실행 | UART udev 영구 권한, 가상환경, 패키지 자동 세팅 후 작업자 GUI 즉시 실행 |
+| [`requirements.txt`](requirements.txt) | 통합 패키지 명세 | Admin, Worker, AI 추론, 테스트 도구 전체를 단일 파일로 관리 |
+
 ---
 
 ## 3. 핵심 공정 흐름
@@ -78,42 +86,29 @@ flowchart TD
 
 ## 4. 빠른 시작
 
-### 4.0 환경 준비 (사전 설치)
-Linux/Ubuntu 환경에서 웹캠 하드웨어 제어 및 GUI 라이브러리를 위해 사전 설치를 권장합니다:
-```bash
-sudo apt update && sudo apt install -y v4l-utils libgl1-mesa-glx libglib2.0-0
-```
+> [!IMPORTANT]
+> **모든 프로그램 실행은 반드시 프로젝트 최상위 루트 디렉토리(`AI_Standard_Process_System/`)에서 수행해야 합니다.**  
+> 하위 폴더(`project_admin/`, `project_worker/`)로 이동하여 실행하지 마십시오.
 
-### 4.1 의존성 패키지 설치 (프로젝트 루트 기준)
-```bash
-# 가상환경 생성 및 활성화
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
+### 4.1 프로그램 실행 (최초 실행 시 환경 자동 세팅)
+가상환경 설치나 권한 설정을 별도로 할 필요 없이, 프로젝트 루트 디렉토리에서 아래 스크립트만 실행하면 **최초 1회 패키지 및 UART 권한이 자동 설정된 후 바로 실행**됩니다:
 
-# 실행용 패키지 전체 설치
-pip install -r requirements.txt
+- **중앙 관제 프로그램 (Admin) 실행**:
+  ```bash
+  bash run_admin.sh
+  ```
 
-# (개발 및 테스트용 도구 포함 설치 시)
-# pip install -r requirements-dev.txt
-```
+- **작업자 프로그램 (Worker) 실행**:
+  ```bash
+  bash run_worker.sh
+  ```
+  *(장비 없이 PC에서 테스트할 경우 `project_worker/config.py`의 `TEST_MODE = True` 설정 시 가상 카메라와 Mock AI로 동작)*
 
-### 4.2 STM32 펌웨어 빌드 및 플래싱
+---
+
+### 4.2 STM32 펌웨어 빌드 및 플래싱 (필요 시)
 ```bash
 cd project_stm
 make clean && make
 make run  # ST-LINK로 플래싱
 ```
-
-### 4.3 중앙 관제 프로그램 (Admin) 실행
-```bash
-cd project_admin
-python3 main.py
-```
-
-### 4.4 작업자 프로그램 (Worker) 실행
-```bash
-cd project_worker
-python3 main.py
-```
-*(장비 없이 테스트할 경우 `project_worker/config.py`의 `TEST_MODE = True` 설정 시 가상 카메라와 Mock AI로 동작 가능)*

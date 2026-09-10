@@ -36,9 +36,10 @@ def check_relative_position(
 
 
 def get_position_distance(relative_x, relative_y, position):
-    dx = (relative_x - position["expected_x"]) / position["tolerance_x"]
-
-    dy = (relative_y - position["expected_y"]) / position["tolerance_y"]
+    tol_x = max(1e-6, position.get("tolerance_x", 1e-6))
+    tol_y = max(1e-6, position.get("tolerance_y", 1e-6))
+    dx = (relative_x - position["expected_x"]) / tol_x
+    dy = (relative_y - position["expected_y"]) / tol_y
 
     return dx * dx + dy * dy
 

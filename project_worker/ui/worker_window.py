@@ -769,17 +769,10 @@ class WorkerWindow(QMainWindow):
                     self.camera_view.size(), Qt.IgnoreAspectRatio, Qt.FastTransformation
                 )
             )
-        elif cv2 is not None:
-            view_size = self.camera_view.size()
-            vw, vh = view_size.width(), view_size.height()
-            if vw > 10 and vh > 10:
-                resized = cv2.resize(frame, (vw, vh), interpolation=cv2.INTER_LINEAR)
-                qimg = QImage(resized.data, vw, vh, vw * 3, QImage.Format_BGR888)
-                self.camera_view.setPixmap(QPixmap.fromImage(qimg))
-            else:
-                fh, fw, _ = frame.shape
-                qimg = QImage(frame.data, fw, fh, fw * 3, QImage.Format_BGR888)
-                self.camera_view.setPixmap(QPixmap.fromImage(qimg))
+        elif cv2 is not None and hasattr(frame, "shape"):
+            fh, fw = frame.shape[:2]
+            qimg = QImage(frame.data, fw, fh, fw * 3, QImage.Format_BGR888)
+            self.camera_view.setPixmap(QPixmap.fromImage(qimg))
 
     # ── 작업 제어 버튼 핸들러 ────────────────────────────────────────────────
 

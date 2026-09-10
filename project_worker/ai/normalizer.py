@@ -10,8 +10,8 @@ def get_relative_center(
     reference_cx = (rx1 + rx2) / 2
     reference_cy = (ry1 + ry2) / 2
 
-    reference_width = rx2 - rx1
-    reference_height = ry2 - ry1
+    reference_width = max(1e-6, rx2 - rx1)
+    reference_height = max(1e-6, ry2 - ry1)
 
     relative_x = (target_cx - reference_cx) / reference_width
     relative_y = (reference_cy - target_cy) / reference_height

@@ -63,7 +63,10 @@ class UartReceiverThread(QThread):
         # 후보 포트 자동 탐색 (기본 설정 포트가 없으면 다른 시리얼 포트 확인)
         actual_port = self.port
         if not os.path.exists(actual_port):
-            candidates = ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyACM1", "/dev/ttyTHS1"]
+            candidates = [
+                "/dev/ttyACM0", "/dev/ttyUSB0",
+                "/dev/ttyUSB1", "/dev/ttyACM1", "/dev/ttyTHS1",
+            ]
             for candidate in candidates:
                 if os.path.exists(candidate):
                     actual_port = candidate
@@ -74,26 +77,63 @@ class UartReceiverThread(QThread):
             return
 
         try:
-            self._serial = serial.Serial(
-                port=actual_port,
-                baudrate=self.baudrate,
-                timeout=config.UART_TIMEOUT_SECONDS,
-            )
-            self.port = actual_port
-            self._is_connected = True
-            self.status_changed.emit(f"UART 연결: {actual_port}", True)
-            while self._running:
-                raw_line = self._serial.readline()
-                if raw_line:
-                    line_str = raw_line.decode("utf-8", errors="replace").strip()
-                    if line_str:
-                        self.message_received.emit(line_str)
-        except PermissionError:
-            self._is_connected = False
-            self.status_changed.emit(f"UART 권한 오류: {actual_port} (sudo chmod 666 {actual_port})", False)
-        except Exception as error:
-            self._is_connected = False
-            self.status_changed.emit(f"UART 연결 실패: {error}", False)
+            # 포트 연결 시도 (권한 부족 시 자동 chmod 666 시도 및 1회 재시도)
+            connected = False
+            for attempt in range(2):
+                try:
+                    self._serial = serial.Serial(
+                        port=actual_port,
+                        baudrate=self.baudrate,
+                        timeout=config.UART_TIMEOUT_SECONDS,
+                    )
+                    self.port = actual_port
+                    self._is_connected = True
+                    connected = True
+                    self.status_changed.emit(f"UART 연결: {actual_port}", True)
+                    break
+                except Exception as error:
+                    err_msg = str(error)
+                    is_perm_err = (
+                        isinstance(error, PermissionError)
+                        or "Permission denied" in err_msg
+                        or "Errno 13" in err_msg
+                    )
+                    if is_perm_err and attempt == 0:
+                        import subprocess
+                        # sudo 캐시 또는 무암호 sudo를 통해 자동으로 포트 권한 0666 부여 시도
+                        try:
+                            res = subprocess.run(
+                                ["sudo", "-n", "chmod", "666", actual_port],
+                                capture_output=True,
+                                timeout=2,
+                            )
+                            if res.returncode == 0:
+                                continue  # 권한 획득 성공 -> 재시도
+                        except Exception:
+                            pass
+
+                    self._is_connected = False
+                    if is_perm_err:
+                        hint_msg = (
+                            f"UART 권한 없음: {actual_port} "
+                            f"(해결: 프로젝트 루트에서 bash run_worker.sh 실행)"
+                        )
+                        self.status_changed.emit(hint_msg, False)
+                    else:
+                        self.status_changed.emit(
+                            f"UART 연결 실패: {error}", False
+                        )
+                    return
+
+            if connected:
+                while self._running:
+                    raw_line = self._serial.readline()
+                    if raw_line:
+                        line_str = raw_line.decode(
+                            "utf-8", errors="replace"
+                        ).strip()
+                        if line_str:
+                            self.message_received.emit(line_str)
         finally:
             self._is_connected = False
             if self._serial is not None:

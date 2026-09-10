@@ -1,5 +1,6 @@
 """Jetson 작업자 프로그램 실행 및 로그인/로그아웃 화면 전환입니다."""
 
+from pathlib import Path
 import signal
 import sys
 
@@ -76,5 +77,22 @@ def main() -> int:
         return 1
 
 
+def _verify_root_execution() -> None:
+    """프로젝트 최상위 루트 디렉토리에서 실행되었는지 검증합니다."""
+    project_root = Path(__file__).resolve().parent.parent
+    current_dir = Path.cwd().resolve()
+    if current_dir != project_root:
+        sys.stderr.write(
+            f"\n❌ [실행 오류] 본 프로그램은 반드시 프로젝트 최상위 루트 디렉토리에서 실행해야 합니다.\n"
+            f"   현재 위치: {current_dir}\n"
+            f"   프로젝트 루트: {project_root}\n\n"
+            f"👉 실행 방법:\n"
+            f"   cd {project_root}\n"
+            f"   bash run_worker.sh\n\n"
+        )
+        sys.exit(1)
+
+
 if __name__ == "__main__":
+    _verify_root_execution()
     sys.exit(main())

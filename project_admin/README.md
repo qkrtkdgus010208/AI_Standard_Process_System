@@ -41,11 +41,10 @@ project_admin/
 │       ├── product_dialog.py         # 제품 및 STEP별 기준 이미지 추가/수정
 │       ├── step_history_dialog.py    # 작업 회차별 STEP 작업시간 및 통계
 │       └── worker_account_dialog.py  # 작업자 계정 등록/말소 다이얼로그
-├── tests/                      # 자동화 단위 테스트 스위트 (44개 테스트)
+├── tests/                      # 자동화 단위 테스트 스위트 (45개 테스트)
 │   ├── test_database_facade.py
 │   ├── test_product_service.py
 │   └── test_state_persistence.py
-└── requirements.txt            # 필수 패키지 (PyQt5)
 ```
 
 ## 2. 주요 기능
@@ -74,26 +73,28 @@ flowchart LR
 
 ## 4. 설치 및 실행 (Linux 기준)
 
+> [!IMPORTANT]
+> **모든 프로그램 실행은 반드시 프로젝트 최상위 루트 디렉토리(`AI_Standard_Process_System/`)에서 수행해야 합니다.**  
+> 하위 폴더(`project_admin/`)로 이동하여 실행하지 마십시오.
+
+가상환경 및 의존성 패키지가 없으면 최초 1회 자동 설치 후 즉시 실행됩니다:
+
 ```bash
-# 가상환경 생성 및 활성화
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 의존성 설치
-pip install -r requirements.txt
-
-# 프로그램 실행
-python3 main.py
+# 프로젝트 최상위 루트 디렉토리(AI_Standard_Process_System/)에서 실행
+bash run_admin.sh
 ```
 
-### 기본 로그인 계정 (개발/시연용)
-`python3 sample_data.py` 실행 시 생성되는 기본 계정:
+### 개발/시연용 샘플 데이터 생성
+프로젝트 루트 디렉토리에서 아래 명령어를 실행합니다:
+```bash
+python3 project_admin/sample_data.py
+```
 - **관리자**: 아이디 `admin`, 비밀번호 `admin1234`
 - **작업자**: 아이디 `1001`, 비밀번호 `worker1234`
 
 ## 5. 자동화 테스트 실행
 
-데이터베이스, Gateway, 제품 서비스 및 상태 복원 로직을 검증하는 자동화 테스트가 포함되어 있습니다:
+데이터베이스, Gateway, 제품 서비스 및 상태 복원 로직을 검증하는 자동화 테스트(45개)입니다. **반드시 프로젝트 최상위 루트 디렉토리에서 실행**합니다:
 ```bash
-python3 -m unittest discover -p "test*.py"
+PYTHONPATH=project_admin python3 -m unittest discover -s project_admin/tests -p "test*.py"
 ```

@@ -12,7 +12,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -256,7 +256,8 @@ class TensorRTJudge(BaseJudge):
 
         # 1. YOLO 추론
         detections = self.detector.detect(proc_frame)
-        self._update_name_mappings()
+        if not getattr(self, "name_to_id", None):
+            self._update_name_mappings()
 
         step_key = str(step_no)
         step_config = self.recipe.get(step_key)
