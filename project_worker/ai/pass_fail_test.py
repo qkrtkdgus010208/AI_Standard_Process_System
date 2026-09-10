@@ -21,7 +21,9 @@ STEP = 6
 # 1. Recipe 로드
 # ============================================================
 
-with open("recipe.json", "r", encoding="utf-8") as f:
+import os
+recipe_file = "racing_car.json" if os.path.exists("racing_car.json") else "recipe.json"
+with open(recipe_file, "r", encoding="utf-8") as f:
     recipe = json.load(f)
 
 step_config = recipe[str(STEP)]

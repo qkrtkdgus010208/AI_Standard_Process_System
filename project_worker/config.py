@@ -46,7 +46,7 @@ CSI_GSTREAMER_PIPELINE = (
     "videoconvert ! video/x-raw, format=(string)BGR ! appsink drop=1"
 )
 
-# AI 설정: tensorrt (실제 yolo26n_fp16.engine 및 recipe.json 기반 검사)
+# AI 설정: tensorrt (실제 yolo26n_fp16.engine 및 racing_car.json 기반 검사)
 AI_BACKEND = "tensorrt"
 
 # TEST_MODE용 기본 제품 목록

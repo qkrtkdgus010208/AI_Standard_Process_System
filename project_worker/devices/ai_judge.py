@@ -97,7 +97,7 @@ def _draw_box_label(frame, text: str, bx1: int, by1: int, color: tuple) -> None:
 
 
 class TensorRTJudge(BaseJudge):
-    """YOLO TensorRT 엔진 및 recipe.json 기반 실제 조립 공정 정밀 검사 판정기입니다."""
+    """YOLO TensorRT 엔진 및 racing_car.json (레시피) 기반 실제 조립 공정 정밀 검사 판정기입니다."""
 
     def __init__(self, engine_path: Optional[str] = None, recipe_path: Optional[str] = None):
         ai_dir = Path(__file__).resolve().parent.parent / "ai"
@@ -119,7 +119,15 @@ class TensorRTJudge(BaseJudge):
             chosen_model = default_engine
 
         self.model_path = chosen_model
-        self.recipe_path = Path(recipe_path or (ai_dir / "recipe.json"))
+
+        # Recipe 경로 (racing_car.json 우선, recipe.json 호환 지원)
+        if recipe_path:
+            chosen_recipe = Path(recipe_path)
+        elif (ai_dir / "racing_car.json").exists():
+            chosen_recipe = ai_dir / "racing_car.json"
+        else:
+            chosen_recipe = ai_dir / "recipe.json"
+        self.recipe_path = chosen_recipe
 
         # Recipe 로드
         if self.recipe_path.exists():
