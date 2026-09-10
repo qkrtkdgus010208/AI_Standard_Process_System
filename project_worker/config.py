@@ -49,9 +49,8 @@ CSI_GSTREAMER_PIPELINE = (
 # AI 설정: tensorrt (실제 yolo26n_fp16.engine 및 racing_car.json 기반 검사)
 AI_BACKEND = "tensorrt"
 
-# TEST_MODE용 기본 제품 목록
+# 기본 제품 목록 (서버 미연동 시 또는 fallback용)
 DEFAULT_PRODUCTS = [
-    {"product_id": "P001", "product_name": "스마트 액추에이터 A", "total_steps": 5},
-    {"product_id": "P002", "product_name": "모터 드라이버 B", "total_steps": 4},
-    {"product_id": "P003", "product_name": "센서 컨트롤러 C", "total_steps": 3},
+    {"product_id": "P001", "product_name": "레이싱카", "total_steps": 6},
+    {"product_id": "P002", "product_name": "픽업트럭", "total_steps": 6},
 ]

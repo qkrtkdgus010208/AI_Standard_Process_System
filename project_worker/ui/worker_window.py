@@ -564,6 +564,13 @@ class WorkerWindow(QMainWindow):
         # 서버에서 복원된 작업 상황(STEP, 일시정지 상태)을 STM32로 전송하여 하드웨어 동기화
         self.stm.send_step_restore(current_step, saved_state.get("state", "running"))
 
+        # AI 판정기에 복원된 제품 레시피 동기화
+        if hasattr(self, "ai_thread") and self.ai_thread and target_product:
+            recipe_name = self.ai_thread.set_product(target_product.product_name, target_product.product_id)
+            if recipe_name:
+                self.add_log("info", f"복원 제품 레시피 적용: {recipe_name}")
+
+
         QMessageBox.information(
             self,
             "이전 작업 복원",
@@ -589,6 +596,12 @@ class WorkerWindow(QMainWindow):
         self.total_steps_display.setText(f"{product.total_steps} 단계")
         self._apply_work_setup()
         self._clear_step_guide("작업을 시작하면\n기준 이미지가 표시됩니다.")
+
+        # AI 판정기에 선택된 제품 레시피 동기화
+        if hasattr(self, "ai_thread") and self.ai_thread:
+            recipe_name = self.ai_thread.set_product(product.product_name, product.product_id)
+            if recipe_name:
+                self.add_log("info", f"제품 선택: {product.product_name} ({product.product_id}) → AI 레시피: {recipe_name}")
 
     def _apply_work_setup(self) -> None:
         """선택된 제품 정보를 Controller에 적용합니다."""
@@ -814,10 +827,17 @@ class WorkerWindow(QMainWindow):
             return
 
         current_step = self.work_controller.snapshot.current_step
+        product_name = self.work_controller.snapshot.product_name
+        product_id = self.work_controller.snapshot.product_id
         self._ai_busy = True
         self.ai_button.setEnabled(False)
         self.ai_button.setText("판정 중...")
-        self.ai_thread.submit_frame(frame, step_no=current_step)
+        self.ai_thread.submit_frame(
+            frame,
+            step_no=current_step,
+            product_name=product_name,
+            product_id=product_id,
+        )
 
     def handle_ai_result(self, result: JudgeResult) -> None:
         """AI Thread 판정 결과를 Controller에 반영하고 STM32로 P/F/C를 전송하며 결과 창을 띄웁니다."""

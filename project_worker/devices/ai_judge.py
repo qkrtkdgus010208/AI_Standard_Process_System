@@ -48,14 +48,29 @@ class JudgeResult:
 class BaseJudge:
     """판정 구현체가 따라야 할 인터페이스입니다."""
 
-    def predict(self, frame, step_no: int = 1) -> JudgeResult:
+    def predict(
+        self,
+        frame,
+        step_no: int = 1,
+        product_name: str = "",
+        product_id: str = "",
+    ) -> JudgeResult:
         raise NotImplementedError
+
+    def set_product(self, product_name: str = "", product_id: str = "") -> str:
+        return ""
 
 
 class MockJudge(BaseJudge):
     """장비와 모델 없이 PASS/FAIL 흐름을 시험하는 Mock 판정기입니다."""
 
-    def predict(self, frame, step_no: int = 1) -> JudgeResult:
+    def predict(
+        self,
+        frame,
+        step_no: int = 1,
+        product_name: str = "",
+        product_id: str = "",
+    ) -> JudgeResult:
         time.sleep(0.18)
         is_pass = random.random() >= 0.25
         confidence = random.uniform(0.88, 0.99)
@@ -73,6 +88,50 @@ class MockJudge(BaseJudge):
             annotated_frame=frame,
             step_no=step_no,
         )
+
+    def set_product(self, product_name: str = "", product_id: str = "") -> str:
+        return "mock.json"
+
+
+def resolve_recipe_path(ai_dir: Path, product_name: str = "", product_id: str = "") -> Path:
+    """선택된 제품명 또는 제품 ID를 분석하여 적절한 .json 레시피 파일을 찾아 반환합니다."""
+    name_clean = (product_name or "").strip().lower().replace(" ", "_")
+    id_clean = (product_id or "").strip().lower().replace(" ", "_")
+    parts = [p for p in (name_clean, id_clean) if p]
+    combined = "_".join(parts)
+
+    # 1. 픽업트럭 계열 키워드
+    if any(kw in combined for kw in ("pickup", "truck", "픽업", "트럭")):
+        truck_file = ai_dir / "pickup_truck.json"
+        if truck_file.exists():
+            return truck_file
+
+    # 2. 레이싱카 계열 키워드
+    if any(kw in combined for kw in ("racing", "car", "레이싱", "카", "레이서")):
+        car_file = ai_dir / "racing_car.json"
+        if car_file.exists():
+            return car_file
+
+    # 3. 제품 ID 또는 제품명과 직접 일치하는 파일명 (예: P001.json, pickup_truck.json 등)
+    for key in parts:
+        direct = ai_dir / f"{key}.json"
+        if direct.exists():
+            return direct
+
+    # 4. ai_dir 내의 .json 파일 중 제품명/ID에 파일명(stem)이 포함된 경우 탐색
+    if parts:
+        for json_file in ai_dir.glob("*.json"):
+            stem = json_file.stem.lower()
+            if stem and any(stem in p or (len(p) >= 3 and p in stem) for p in parts):
+                return json_file
+
+    # 5. 기본 fallback: racing_car.json -> pickup_truck.json -> recipe.json
+    for fallback_name in ("racing_car.json", "pickup_truck.json", "recipe.json"):
+        fallback = ai_dir / fallback_name
+        if fallback.exists():
+            return fallback
+
+    return ai_dir / "racing_car.json"
 
 
 def _draw_box_label(frame, text: str, bx1: int, by1: int, color: tuple) -> None:
@@ -97,14 +156,14 @@ def _draw_box_label(frame, text: str, bx1: int, by1: int, color: tuple) -> None:
 
 
 class TensorRTJudge(BaseJudge):
-    """YOLO TensorRT 엔진 및 racing_car.json (레시피) 기반 실제 조립 공정 정밀 검사 판정기입니다."""
+    """YOLO TensorRT 엔진 및 제품별 레시피(.json) 기반 실제 조립 공정 정밀 검사 판정기입니다."""
 
     def __init__(self, engine_path: Optional[str] = None, recipe_path: Optional[str] = None):
-        ai_dir = Path(__file__).resolve().parent.parent / "ai"
+        self.ai_dir = Path(__file__).resolve().parent.parent / "ai"
 
-        default_engine = ai_dir / "yolo26n_fp16.engine"
-        test_engine = ai_dir / "yolo26n_fp16.engine.test"
-        onnx_path = ai_dir / "yolo26n.onnx"
+        default_engine = self.ai_dir / "yolo26n_fp16.engine"
+        test_engine = self.ai_dir / "yolo26n_fp16.engine.test"
+        onnx_path = self.ai_dir / "yolo26n.onnx"
 
         # 사용 가능한 모델 파일 탐색
         if engine_path:
@@ -120,25 +179,39 @@ class TensorRTJudge(BaseJudge):
 
         self.model_path = chosen_model
 
-        # Recipe 경로 (racing_car.json 우선, recipe.json 호환 지원)
+        # Recipe 초기 경로 결정
         if recipe_path:
-            chosen_recipe = Path(recipe_path)
-        elif (ai_dir / "racing_car.json").exists():
-            chosen_recipe = ai_dir / "racing_car.json"
+            self.recipe_path = Path(recipe_path)
         else:
-            chosen_recipe = ai_dir / "recipe.json"
-        self.recipe_path = chosen_recipe
+            self.recipe_path = resolve_recipe_path(self.ai_dir)
 
-        # Recipe 로드
-        if self.recipe_path.exists():
-            with open(self.recipe_path, "r", encoding="utf-8") as f:
-                self.recipe = json.load(f)
-        else:
-            self.recipe = {}
+        self.recipe = {}
+        self._load_recipe()
 
         # Detector 로드
         self.detector = Detector(str(self.model_path))
         self._update_name_mappings()
+
+    def _load_recipe(self) -> None:
+        """현재 self.recipe_path의 JSON을 로드합니다."""
+        if self.recipe_path.exists():
+            try:
+                with open(self.recipe_path, "r", encoding="utf-8") as f:
+                    self.recipe = json.load(f)
+            except Exception as e:
+                print(f"[AI Judge] 레시피 로드 실패 ({self.recipe_path}): {e}")
+                self.recipe = {}
+        else:
+            self.recipe = {}
+
+    def set_product(self, product_name: str = "", product_id: str = "") -> str:
+        """선택된 제품에 매칭되는 레시피(.json)로 교체합니다."""
+        target_path = resolve_recipe_path(self.ai_dir, product_name, product_id)
+        if target_path != self.recipe_path or not self.recipe:
+            self.recipe_path = target_path
+            self._load_recipe()
+            print(f"[AI Judge] 제품 '{product_name}' ({product_id}) 레시피 적용: {self.recipe_path.name}")
+        return self.recipe_path.name
 
     def _update_name_mappings(self) -> None:
         names = getattr(self.detector, "names", {}) or getattr(
@@ -151,7 +224,16 @@ class TensorRTJudge(BaseJudge):
         else:
             self.name_to_id = {}
 
-    def predict(self, frame, step_no: int = 1) -> JudgeResult:
+    def predict(
+        self,
+        frame,
+        step_no: int = 1,
+        product_name: str = "",
+        product_id: str = "",
+    ) -> JudgeResult:
+        if product_name or product_id:
+            self.set_product(product_name, product_id)
+
         if frame is None or (isinstance(frame, str) and frame == "mock_frame"):
             return JudgeResult(
                 "FAIL",
@@ -415,6 +497,8 @@ class AiInferenceThread(QThread):
         self._condition = threading.Condition()
         self._latest_frame = None
         self._latest_step = 1
+        self._latest_product_name = ""
+        self._latest_product_id = ""
         self._running = False
 
     def is_ready(self) -> bool:
@@ -424,11 +508,30 @@ class AiInferenceThread(QThread):
         self.stop()
         self.start()
 
-    def submit_frame(self, frame, step_no: int = 1) -> None:
-        """대기열을 늘리지 않고 최신 Frame과 STEP 번호를 저장합니다."""
+    def set_product(self, product_name: str = "", product_id: str = "") -> str:
+        """현재 작업 대상 제품을 설정하고 레시피를 동기화합니다."""
+        with self._condition:
+            self._latest_product_name = product_name
+            self._latest_product_id = product_id
+        if hasattr(self.judge, "set_product"):
+            return self.judge.set_product(product_name, product_id)
+        return ""
+
+    def submit_frame(
+        self,
+        frame,
+        step_no: int = 1,
+        product_name: str = "",
+        product_id: str = "",
+    ) -> None:
+        """대기열을 늘리지 않고 최신 Frame과 STEP 번호, 제품명을 저장합니다."""
         with self._condition:
             self._latest_frame = frame
             self._latest_step = int(step_no)
+            if product_name:
+                self._latest_product_name = product_name
+            if product_id:
+                self._latest_product_id = product_id
             self._condition.notify()
 
     def run(self) -> None:
@@ -442,9 +545,13 @@ class AiInferenceThread(QThread):
                     break
                 frame = self._latest_frame
                 step_no = self._latest_step
+                pname = self._latest_product_name
+                pid = self._latest_product_id
                 self._latest_frame = None
             try:
-                result = self.judge.predict(frame, step_no=step_no)
+                result = self.judge.predict(
+                    frame, step_no=step_no, product_name=pname, product_id=pid
+                )
                 self.judgement_ready.emit(result)
             except Exception as error:
                 self.status_changed.emit(f"AI 추론 오류: {error}", False)

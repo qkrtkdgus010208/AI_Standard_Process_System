@@ -22,7 +22,21 @@ STEP = 6
 # ============================================================
 
 import os
-recipe_file = "racing_car.json" if os.path.exists("racing_car.json") else "recipe.json"
+import sys
+
+# 인자 또는 환경변수로부터 레시피 파일 선택 (기본값: racing_car.json)
+recipe_arg = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("RECIPE_FILE", "racing_car.json")
+if not os.path.exists(recipe_arg):
+    if os.path.exists(f"{recipe_arg}.json"):
+        recipe_arg = f"{recipe_arg}.json"
+    elif os.path.exists("racing_car.json"):
+        recipe_arg = "racing_car.json"
+    elif os.path.exists("pickup_truck.json"):
+        recipe_arg = "pickup_truck.json"
+    else:
+        recipe_arg = "recipe.json"
+recipe_file = recipe_arg
+print(f"[Recipe] 로드된 레시피 파일: {recipe_file}")
 with open(recipe_file, "r", encoding="utf-8") as f:
     recipe = json.load(f)
 
