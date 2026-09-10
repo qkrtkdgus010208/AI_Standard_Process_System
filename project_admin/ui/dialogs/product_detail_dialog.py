@@ -149,40 +149,46 @@ class ProductDetailDialog(QDialog):
         self.defect_value.setText(str(total_defect_buttons))
 
         highest_fail = max((int(row["fail_count"]) for row in rows), default=0)
-        self.table.setRowCount(len(rows))
-        for row_index, row in enumerate(rows):
-            fail_count = int(row["fail_count"])
-            defect_count = int(row["defect_button_count"])
-            if defect_count > 0:
-                analysis, analysis_color = "불량 발생", "#B45656"
-            elif highest_fail > 0 and fail_count == highest_fail:
-                analysis, analysis_color = "우선 점검", "#B45656"
-            elif fail_count > 0:
-                analysis, analysis_color = "관찰", "#A87522"
-            elif int(row["judgement_count"]) > 0:
-                analysis, analysis_color = "양호", "#2F7D4A"
-            else:
-                analysis, analysis_color = "데이터 없음", "#778391"
-            issue_times = [
-                value for value in (row["latest_fail_at"], row["latest_defect_at"])
-                if value
-            ]
-            latest_issue = max(issue_times) if issue_times else "—"
-            values = (
-                f"STEP {row['step_no']}", row["judgement_count"], row["pass_count"],
-                fail_count, f"{float(row['fail_rate']):.1f}%", defect_count,
-                latest_issue, analysis,
-            )
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(str(value))
-                item.setTextAlignment(Qt.AlignCenter)
-                if column in (3, 4) and fail_count:
-                    item.setForeground(QColor("#B45656"))
-                elif column == 5 and defect_count:
-                    item.setForeground(QColor("#B45656"))
-                elif column == 7:
-                    item.setForeground(QColor(analysis_color))
-                self.table.setItem(row_index, column, item)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.setRowCount(len(rows))
+            for row_index, row in enumerate(rows):
+                fail_count = int(row["fail_count"])
+                defect_count = int(row["defect_button_count"])
+                if defect_count > 0:
+                    analysis, analysis_color = "불량 발생", "#B45656"
+                elif highest_fail > 0 and fail_count == highest_fail:
+                    analysis, analysis_color = "우선 점검", "#B45656"
+                elif fail_count > 0:
+                    analysis, analysis_color = "관찰", "#A87522"
+                elif int(row["judgement_count"]) > 0:
+                    analysis, analysis_color = "양호", "#2F7D4A"
+                else:
+                    analysis, analysis_color = "데이터 없음", "#778391"
+                issue_times = [
+                    value for value in (row["latest_fail_at"], row["latest_defect_at"])
+                    if value
+                ]
+                latest_issue = max(issue_times) if issue_times else "—"
+                values = (
+                    f"STEP {row['step_no']}", row["judgement_count"], row["pass_count"],
+                    fail_count, f"{float(row['fail_rate']):.1f}%", defect_count,
+                    latest_issue, analysis,
+                )
+                for column, value in enumerate(values):
+                    item = QTableWidgetItem(str(value))
+                    item.setTextAlignment(Qt.AlignCenter)
+                    if column in (3, 4) and fail_count:
+                        item.setForeground(QColor("#B45656"))
+                    elif column == 5 and defect_count:
+                        item.setForeground(QColor("#B45656"))
+                    elif column == 7:
+                        item.setForeground(QColor(analysis_color))
+                    self.table.setItem(row_index, column, item)
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
 
     def reset_quality_data(self) -> None:
         """확인 후 현재 시점을 제품 품질 통계의 새 기준으로 설정합니다."""

@@ -122,15 +122,34 @@ class EmployeeRepository:
 
 
 _EMPLOYEE_MONITORING_SELECT = """
-    SELECT e.employee_id, e.name, COALESCE(e.role, '') AS role,
-        CASE WHEN EXISTS (SELECT 1 FROM work_sessions AS ws WHERE ws.employee_id = e.employee_id
-          AND ws.login_at IS NOT NULL AND ws.logout_at IS NULL) THEN 'working' ELSE 'off' END AS attendance_status,
-        COALESCE((SELECT COALESCE(p.product_name, pr.product_id) FROM product_runs AS pr
-          LEFT JOIN products AS p ON p.product_id = pr.product_id WHERE pr.employee_id = e.employee_id
-          AND pr.completed_at IS NULL ORDER BY pr.started_at DESC, pr.product_run_id DESC LIMIT 1), '') AS active_product_name,
-        (SELECT sr.step_no FROM step_runs AS sr WHERE sr.product_run_id = (SELECT pr2.product_run_id
-          FROM product_runs AS pr2 WHERE pr2.employee_id = e.employee_id AND pr2.completed_at IS NULL
-          ORDER BY pr2.started_at DESC, pr2.product_run_id DESC LIMIT 1) AND sr.completed_at IS NULL
-          ORDER BY sr.started_at DESC, sr.step_run_id DESC LIMIT 1) AS current_step
+    SELECT
+        e.employee_id, e.name, COALESCE(e.role, '') AS role,
+        CASE WHEN EXISTS (
+            SELECT 1 FROM work_sessions AS ws
+            WHERE ws.employee_id = e.employee_id
+              AND ws.login_at IS NOT NULL AND ws.logout_at IS NULL
+        ) THEN 'working' ELSE 'off' END AS attendance_status,
+        COALESCE(pr_active.product_name, '') AS active_product_name,
+        sr_active.step_no AS current_step
     FROM employees AS e
+    LEFT JOIN (
+        SELECT pr.employee_id, pr.product_run_id,
+               COALESCE(p.product_name, pr.product_id) AS product_name
+        FROM product_runs AS pr
+        LEFT JOIN products AS p ON p.product_id = pr.product_id
+        WHERE pr.completed_at IS NULL
+          AND pr.started_at = (
+              SELECT MAX(pr2.started_at) FROM product_runs AS pr2
+              WHERE pr2.employee_id = pr.employee_id AND pr2.completed_at IS NULL
+          )
+    ) pr_active ON pr_active.employee_id = e.employee_id
+    LEFT JOIN (
+        SELECT sr.product_run_id, sr.step_no
+        FROM step_runs AS sr
+        WHERE sr.completed_at IS NULL
+          AND sr.started_at = (
+              SELECT MAX(sr2.started_at) FROM step_runs AS sr2
+              WHERE sr2.product_run_id = sr.product_run_id AND sr2.completed_at IS NULL
+          )
+    ) sr_active ON sr_active.product_run_id = pr_active.product_run_id
 """

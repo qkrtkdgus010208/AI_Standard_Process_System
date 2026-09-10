@@ -139,7 +139,7 @@ void Uart1_Printf(char *fmt,...)
 	char string[256];
 
 	va_start(ap,fmt);
-	vsprintf(string,fmt,ap);
+	vsnprintf(string, sizeof(string), fmt, ap);
 	Uart1_Send_String(string);
 	va_end(ap);
 }

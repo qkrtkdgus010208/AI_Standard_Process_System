@@ -13,6 +13,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 import config
 from network.network_client import send_json_request
+from services.state_reporter import _extract_int
 
 
 @dataclass(frozen=True)
@@ -22,17 +23,6 @@ class ProductInfo:
     product_id: str
     product_name: str
     total_steps: int
-
-
-def _extract_int(raw: dict, keys: tuple) -> Optional[int]:
-    """dict에서 여러 키를 순서대로 탐색하여 정수값을 반환합니다."""
-    for k in keys:
-        if k in raw:
-            try:
-                return int(raw[k])
-            except (ValueError, TypeError):
-                pass
-    return None
 
 
 def parse_product_item(item: Union[dict, list, tuple]) -> Optional[ProductInfo]:

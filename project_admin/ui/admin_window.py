@@ -428,10 +428,14 @@ class AdminWindow(QMainWindow):
         try:
             if visible_ids:
                 employees = self.database_manager.get_employee_monitoring_rows(visible_ids)
-                for employee in employees:
-                    row_index = self._employee_row_by_id.get(str(employee["employee_id"]))
-                    if row_index is not None:
-                        self._update_employee_row(row_index, employee)
+                self.result_table.setUpdatesEnabled(False)
+                try:
+                    for employee in employees:
+                        row_index = self._employee_row_by_id.get(str(employee["employee_id"]))
+                        if row_index is not None:
+                            self._update_employee_row(row_index, employee)
+                finally:
+                    self.result_table.setUpdatesEnabled(True)
             self.working_worker_value.setText(
                 str(self.database_manager.get_working_worker_count())
             )

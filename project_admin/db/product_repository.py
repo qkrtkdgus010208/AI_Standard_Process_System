@@ -15,17 +15,21 @@ class ProductRepository:
         """제품 검색 결과와 생산·불량 요약을 반환합니다."""
         search_text = f"%{keyword.strip()}%"
         with self.connect() as connection:
-            rows = connection.execute("""SELECT p.product_id, p.product_name, p.total_steps,
-                          SUM(CASE WHEN pr.completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed_count,
-                          SUM(CASE WHEN pr.result = 'defect' THEN 1 ELSE 0 END) AS defect_count,
-                          CASE WHEN SUM(CASE WHEN pr.completed_at IS NOT NULL THEN 1 ELSE 0 END) = 0 THEN 0.0
+            rows = connection.execute("""
+                SELECT p.product_id, p.product_name, p.total_steps,
+                       SUM(CASE WHEN pr.completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed_count,
+                       SUM(CASE WHEN pr.result = 'defect' THEN 1 ELSE 0 END) AS defect_count,
+                       CASE WHEN SUM(CASE WHEN pr.completed_at IS NOT NULL THEN 1 ELSE 0 END) = 0 THEN 0.0
                             ELSE ROUND(100.0 * SUM(CASE WHEN pr.result = 'defect' THEN 1 ELSE 0 END) /
-                              SUM(CASE WHEN pr.completed_at IS NOT NULL THEN 1 ELSE 0 END), 1) END AS defect_rate
-                   FROM products AS p LEFT JOIN product_runs AS pr ON pr.product_id = p.product_id
-                    AND pr.product_run_id > COALESCE((SELECT qb.product_run_id_cutoff FROM product_quality_baselines AS qb
-                      WHERE qb.product_id = p.product_id), 0)
-                   WHERE p.product_id LIKE ? OR p.product_name LIKE ?
-                   GROUP BY p.product_id, p.product_name, p.total_steps ORDER BY p.product_id""", (search_text, search_text)).fetchall()
+                                 SUM(CASE WHEN pr.completed_at IS NOT NULL THEN 1 ELSE 0 END), 1) END AS defect_rate
+                FROM products AS p
+                LEFT JOIN product_quality_baselines AS qb ON qb.product_id = p.product_id
+                LEFT JOIN product_runs AS pr ON pr.product_id = p.product_id
+                     AND pr.product_run_id > COALESCE(qb.product_run_id_cutoff, 0)
+                WHERE p.product_id LIKE ? OR p.product_name LIKE ?
+                GROUP BY p.product_id, p.product_name, p.total_steps
+                ORDER BY p.product_id
+            """, (search_text, search_text)).fetchall()
         return [dict(row) for row in rows]
 
     def list_products(self) -> list[dict]:
@@ -166,7 +170,10 @@ class ProductRepository:
             defect_cutoff = connection.execute("""SELECT COALESCE(MAX(dl.defect_id), 0) FROM defect_logs AS dl
                 JOIN step_runs AS sr ON sr.step_run_id = dl.step_run_id JOIN product_runs AS pr ON pr.product_run_id = sr.product_run_id
                 WHERE pr.product_id = ?""", (product_id,)).fetchone()[0]
-            connection.execute("""INSERT OR REPLACE INTO product_quality_baselines(product_id, reset_at, product_run_id_cutoff, judgement_id_cutoff, defect_id_cutoff)
-                VALUES (?, datetime('now', '+9 hours'), ?, ?, ?)""", (product_id, product_run_cutoff, judgement_cutoff, defect_cutoff))
-            reset_at = connection.execute("SELECT reset_at FROM product_quality_baselines WHERE product_id = ?", (product_id,)).fetchone()["reset_at"]
+            cursor = connection.execute("""
+                INSERT OR REPLACE INTO product_quality_baselines(product_id, reset_at, product_run_id_cutoff, judgement_id_cutoff, defect_id_cutoff)
+                VALUES (?, datetime('now', '+9 hours'), ?, ?, ?)
+                RETURNING reset_at
+            """, (product_id, product_run_cutoff, judgement_cutoff, defect_cutoff))
+            reset_at = cursor.fetchone()["reset_at"]
         return str(reset_at)

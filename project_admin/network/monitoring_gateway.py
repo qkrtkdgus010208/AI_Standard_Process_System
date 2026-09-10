@@ -47,6 +47,7 @@ class MonitoringGatewayThread(QThread):
         self._server_socket = None
         self._sessions: dict[str, GatewaySession] = {}
         self._sessions_lock = RLock()
+        self._cache_lock = RLock()
         self._employee_locks = {}
         self._step_guide_cache: dict[tuple[str, int, str, str], dict] = {}
         self.endpoint_registry = endpoint_registry or WorkerEndpointRegistry()
@@ -218,7 +219,7 @@ class MonitoringGatewayThread(QThread):
             return {"ok": True, "guide": None}
 
         cache_key = (product_id, step_no, str(guide.get("sha256", "")), str(guide.get("updated_at", "")))
-        with self._sessions_lock:
+        with self._cache_lock:
             cached_response = self._step_guide_cache.get(cache_key)
             if cached_response is not None:
                 return cached_response
@@ -242,7 +243,7 @@ class MonitoringGatewayThread(QThread):
                 "image_base64": base64.b64encode(image_data).decode("ascii"),
             },
         }
-        with self._sessions_lock:
+        with self._cache_lock:
             self._step_guide_cache[cache_key] = response
         return response
 
@@ -269,10 +270,10 @@ class MonitoringGatewayThread(QThread):
             with self._sessions_lock:
                 if not self._session_matches(token, employee, client_ip):
                     return {"ok": False, "message": "유효하지 않거나 만료된 로그인 세션입니다."}
-                try:
-                    state_event_id = self.database_manager.record_worker_state(state)
-                except ValueError as error:
-                    return {"ok": False, "message": str(error)}
+            try:
+                state_event_id = self.database_manager.record_worker_state(state)
+            except ValueError as error:
+                return {"ok": False, "message": str(error)}
         if state_event_id is not None:
             self.worker_state_received.emit(state)
         return {"ok": True}

@@ -111,6 +111,16 @@ class WorkerWindow(QMainWindow):
 
         self._create_ui()
         self._connect_signals()
+        # UART 명령 디스패치 테이블 — handle_uart_message 호출마다 재생성하지 않도록 캐싱
+        self._uart_handlers = {
+            "CHECK":  self._on_uart_check,
+            "PAUSE":  self._on_uart_pause,
+            "RESUME": self._on_uart_resume,
+            "RESET":  self._on_uart_reset,
+            "START":  self._on_uart_start,
+            "PASS":   self._on_uart_pass,
+            "FAIL":   self._on_uart_fail,
+        }
         # UI가 먼저 그려진 뒤 서비스 시작
         QTimer.singleShot(0, self._start_all)
 
@@ -588,17 +598,21 @@ class WorkerWindow(QMainWindow):
             self._current_product.total_steps,
         )
 
+    def _set_guide_text(self, message: str) -> None:
+        """기준 이미지 패널을 텍스트 모드로 전환하고 메시지를 표시합니다."""
+        self.step_guide_view.setScaledContents(False)
+        self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
+        self.step_guide_view.clear()
+        self.step_guide_view.setText(message)
+
     def _clear_step_guide(self, message: str = "작업을 시작하면\n기준 이미지가 표시됩니다.") -> None:
         """기준 이미지를 지우고 대기 안내 문구로 초기화합니다."""
         self._requested_guide_key = None
-        self.step_guide_view.setScaledContents(False)
-        self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
         if self._displayed_guide_key is None and self.step_guide_view.text() == message:
             return
         self._displayed_guide_key = None
         self.guide_title_label.setText("STEP 기준 이미지")
-        self.step_guide_view.clear()
-        self.step_guide_view.setText(message)
+        self._set_guide_text(message)
 
     def _request_step_guide(self, product_id: str, step_no: int) -> None:
         """요청된 제품·STEP 기준 이미지를 캐시 또는 비동기 네트워크로 가져옵니다."""
@@ -621,10 +635,7 @@ class WorkerWindow(QMainWindow):
         if self._guide_fetch_thread is not None and self._guide_fetch_thread.isRunning():
             return
         self.guide_title_label.setText(f"STEP {step_no} 기준 이미지")
-        self.step_guide_view.setScaledContents(False)
-        self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
-        self.step_guide_view.clear()
-        self.step_guide_view.setText("기준 이미지 불러오는 중…")
+        self._set_guide_text("기준 이미지 불러오는 중…")
         thread = StepGuideFetchThread(
             self.session.token, key[0], key[1], parent=self
         )
@@ -641,24 +652,15 @@ class WorkerWindow(QMainWindow):
         self._displayed_guide_key = key
         self.guide_title_label.setText(f"STEP {step_no} 기준 이미지")
         if not success:
-            self.step_guide_view.setScaledContents(False)
-            self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
-            self.step_guide_view.clear()
-            self.step_guide_view.setText("기준 이미지를\n불러오지 못했습니다.")
+            self._set_guide_text("기준 이미지를\n불러오지 못했습니다.")
             self.add_log("warning", message)
             return
         if image_data is None:
-            self.step_guide_view.setScaledContents(False)
-            self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
-            self.step_guide_view.clear()
-            self.step_guide_view.setText("등록된 기준 이미지가\n없습니다.")
+            self._set_guide_text("등록된 기준 이미지가\n없습니다.")
             return
         pixmap = QPixmap()
         if not pixmap.loadFromData(image_data):
-            self.step_guide_view.setScaledContents(False)
-            self.step_guide_view.setStyleSheet(_GUIDE_TEXT_STYLE)
-            self.step_guide_view.clear()
-            self.step_guide_view.setText("기준 이미지가\n손상되었습니다.")
+            self._set_guide_text("기준 이미지가\n손상되었습니다.")
             self.add_log("warning", "STEP 기준 이미지 데이터를 표시할 수 없습니다.")
             return
         self._guide_pixmap_cache[key] = pixmap
@@ -854,16 +856,7 @@ class WorkerWindow(QMainWindow):
         cmd = message.command
 
         # STM32 → Qt 수신 명령 디스패치 테이블
-        _handlers = {
-            "CHECK":  self._on_uart_check,
-            "PAUSE":  self._on_uart_pause,
-            "RESUME": self._on_uart_resume,
-            "RESET":  self._on_uart_reset,
-            "START":  self._on_uart_start,
-            "PASS":   self._on_uart_pass,
-            "FAIL":   self._on_uart_fail,
-        }
-        handler = _handlers.get(cmd)
+        handler = self._uart_handlers.get(cmd)
         if handler:
             handler(message)
         elif cmd.isdigit() or cmd in ("INIT!!!", "BUZZER TEST!!"):
@@ -1026,6 +1019,8 @@ class WorkerWindow(QMainWindow):
         item = QListWidgetItem(f"{datetime.now().strftime('%H:%M:%S')}  {message}")
         item.setForeground(QColor(_LOG_COLORS.get(level, _LOG_DEFAULT_COLOR)))
         self.log_list.addItem(item)
+        if self.log_list.count() > 200:
+            self.log_list.takeItem(0)
         self.log_list.scrollToBottom()
 
     def _update_clock(self) -> None:

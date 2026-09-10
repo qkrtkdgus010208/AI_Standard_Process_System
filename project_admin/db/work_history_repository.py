@@ -77,13 +77,36 @@ class WorkHistoryRepository:
     def get_step_runs(self, product_run_id: int) -> list[dict]:
         """작업 회차의 STEP 작업시간과 PASS/FAIL을 조회합니다."""
         with self.connect() as connection:
-            rows = connection.execute("""SELECT sr.step_run_id, sr.step_no, sr.started_at, sr.completed_at,
-                CASE WHEN sr.started_at IS NULL OR sr.completed_at IS NULL THEN NULL ELSE MAX(0, CAST(ROUND((julianday(sr.completed_at) - julianday(sr.started_at)) * 86400 - COALESCE(SUM(CASE WHEN pl.paused_at IS NOT NULL AND pl.resumed_at IS NOT NULL THEN (julianday(pl.resumed_at) - julianday(pl.paused_at)) * 86400 ELSE 0 END), 0)) AS INTEGER)) END AS actual_seconds,
-                (SELECT COUNT(*) FROM judgement_logs AS jl WHERE jl.step_run_id = sr.step_run_id AND jl.result = 'pass') AS pass_count,
-                (SELECT COUNT(*) FROM judgement_logs AS jl WHERE jl.step_run_id = sr.step_run_id AND jl.result = 'fail') AS fail_count,
-                CASE WHEN (SELECT COUNT(*) FROM judgement_logs AS jl WHERE jl.step_run_id = sr.step_run_id) = 0 THEN 0.0 ELSE ROUND(100.0 * (SELECT COUNT(*) FROM judgement_logs AS jl WHERE jl.step_run_id = sr.step_run_id AND jl.result = 'fail') / (SELECT COUNT(*) FROM judgement_logs AS jl WHERE jl.step_run_id = sr.step_run_id), 1) END AS fail_rate
-                FROM step_runs AS sr LEFT JOIN pause_logs AS pl ON pl.step_run_id = sr.step_run_id WHERE sr.product_run_id = ?
-                GROUP BY sr.step_run_id, sr.step_no, sr.started_at, sr.completed_at ORDER BY sr.step_no, sr.step_run_id""", (product_run_id,)).fetchall()
+            rows = connection.execute("""
+                SELECT
+                    sr.step_run_id, sr.step_no, sr.started_at, sr.completed_at,
+                    CASE
+                        WHEN sr.started_at IS NULL OR sr.completed_at IS NULL THEN NULL
+                        ELSE MAX(0, CAST(ROUND(
+                            (julianday(sr.completed_at) - julianday(sr.started_at)) * 86400
+                            - COALESCE(SUM(
+                                CASE WHEN pl.paused_at IS NOT NULL AND pl.resumed_at IS NOT NULL
+                                     THEN (julianday(pl.resumed_at) - julianday(pl.paused_at)) * 86400
+                                     ELSE 0 END
+                              ), 0)
+                        ) AS INTEGER))
+                    END AS actual_seconds,
+                    COUNT(CASE WHEN jl.result = 'pass' THEN 1 END) AS pass_count,
+                    COUNT(CASE WHEN jl.result = 'fail' THEN 1 END) AS fail_count,
+                    CASE
+                        WHEN COUNT(jl.judgement_id) = 0 THEN 0.0
+                        ELSE ROUND(
+                            100.0 * COUNT(CASE WHEN jl.result = 'fail' THEN 1 END)
+                            / COUNT(jl.judgement_id), 1
+                        )
+                    END AS fail_rate
+                FROM step_runs AS sr
+                LEFT JOIN pause_logs AS pl ON pl.step_run_id = sr.step_run_id
+                LEFT JOIN judgement_logs AS jl ON jl.step_run_id = sr.step_run_id
+                WHERE sr.product_run_id = ?
+                GROUP BY sr.step_run_id, sr.step_no, sr.started_at, sr.completed_at
+                ORDER BY sr.step_no, sr.step_run_id
+            """, (product_run_id,)).fetchall()
         return [dict(row) for row in rows]
 
     def get_pause_logs(self, step_run_id: int) -> list[dict]:

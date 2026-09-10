@@ -108,8 +108,6 @@ class WorkerStateRecorder:
                 normalized_event_id = str(uuid.UUID(candidate))
             except (ValueError, AttributeError) as error:
                 raise ValueError("event_id는 UUID 문자열이어야 합니다.") from error
-            if len(candidate) != 36 or candidate.lower() != normalized_event_id:
-                raise ValueError("event_id는 UUID 문자열이어야 합니다.")
             client_event_id = normalized_event_id
 
         try:

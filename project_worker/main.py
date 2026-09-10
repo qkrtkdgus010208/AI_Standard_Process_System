@@ -1,7 +1,9 @@
 """Jetson 작업자 프로그램 실행 및 로그인/로그아웃 화면 전환입니다."""
 
+import signal
 import sys
 
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from services.auth_manager import WorkerSession
@@ -58,8 +60,6 @@ def main() -> int:
     application.setApplicationName("Factory Worker PC")
     apply_theme(application)
 
-    import signal
-    from PyQt5.QtCore import QTimer
     signal.signal(signal.SIGINT, lambda *_: application.quit())
     signal.signal(signal.SIGTERM, lambda *_: application.quit())
     sig_timer = QTimer()
