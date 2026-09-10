@@ -1,11 +1,12 @@
 """Jetson 작업자 프로그램의 변경 가능한 설정값입니다."""
 
-
 # Jetson 장비 연결 전에는 True로 유지합니다.
 TEST_MODE = False
 
 # UART / STM32 설정 (Jetson/Linux 장치 경로)
-UART_ENABLED = True        # TEST_MODE와 독립적으로 제어. False면 UART 스레드가 대기 루프로만 실행됩니다.
+UART_ENABLED = (
+    True  # TEST_MODE와 독립적으로 제어. False면 UART 스레드가 대기 루프로만 실행됩니다.
+)
 UART_PORT = "/dev/ttyACM0"  # STM32 연결 포트 (/dev/ttyACM0 또는 /dev/ttyUSB0)
 UART_BAUDRATE = 115200
 UART_TIMEOUT_SECONDS = 0.2
@@ -32,11 +33,13 @@ CAMERA_FPS = 30
 # pass_fail_test.py / C270 웹캠 파라미터 설정 (v4l2-ctl 연동)
 # Linux V4L2(100us 단위)에서 156 = 15.6ms ≈ 1/64초
 CAMERA_V4L2_DEVICE = "/dev/video0"
-CAMERA_AUTO_EXPOSURE = 1   # 1: 수동 노출(Manual), 3: 자동 노출(Auto)
-CAMERA_EXPOSURE = 156      # 적정 셔터 노출값 (156 = 15.6ms ≈ 1/64초)
+CAMERA_AUTO_EXPOSURE = 1  # 1: 수동 노출(Manual), 3: 자동 노출(Auto)
+CAMERA_EXPOSURE = 220  # 적정 셔터 노출값 (156 = 15.6ms ≈ 1/64초)
 CAMERA_CONTRAST = 22
 CAMERA_SHARPNESS = 255
-CAMERA_FLIP = True  # pass_fail_test.py 데이터셋 촬영 방향과 동일한 상하좌우 반전 (flipCode=-1)
+CAMERA_FLIP = (
+    True  # pass_fail_test.py 데이터셋 촬영 방향과 동일한 상하좌우 반전 (flipCode=-1)
+)
 
 # Jetson CSI Camera용 기본 nvarguscamerasrc Pipeline
 CSI_GSTREAMER_PIPELINE = (
