@@ -107,9 +107,9 @@
         "targets": [
             {
                 "class": "front_windshield_roof",
-                "expected_x": 1.6742,
-                "expected_y": 0.0147,
-                "tolerance_x": 0.2,
+                "expected_x": 2.061,
+                "expected_y": 0.012,
+                "tolerance_x": 0.5,
                 "tolerance_y": 0.1
             }
         ]

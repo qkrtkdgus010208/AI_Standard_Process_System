@@ -47,10 +47,19 @@ target_configs = step_config["targets"]
 
 
 # ============================================================
-# 2. Detector 생성
+# 2. Detector 생성 (yolo26n_v2_fp16.engine 우선)
 # ============================================================
 
-detector = Detector("step_data_fliplr_add_single_yolo26n_best.pt")
+model_candidates = [
+    "yolo26n_v2_fp16.engine",
+    "yolo26n_fp16.engine",
+    "yolo26n_v2.onnx",
+    "yolo26n.onnx",
+    "step_data_fliplr_add_single_yolo26n_best.pt",
+]
+model_file = next((m for m in model_candidates if os.path.exists(m)), "yolo26n_v2_fp16.engine")
+detector = Detector(model_file)
+print(f"[Detector] 로드된 모델: {model_file}")
 
 
 # ============================================================

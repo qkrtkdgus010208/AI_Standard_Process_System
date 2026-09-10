@@ -22,7 +22,7 @@ class Detector:
         self.names = DEFAULT_NAMES
 
     def detect(self, frame):
-        results = self.model(frame, imgsz=640, conf=0.3, verbose=False)
+        results = self.model(frame, imgsz=640, conf=0.5, verbose=False)
 
         detections = []
         if not results or len(results) == 0 or results[0].boxes is None:

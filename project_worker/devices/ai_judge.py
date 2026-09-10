@@ -161,21 +161,27 @@ class TensorRTJudge(BaseJudge):
     def __init__(self, engine_path: Optional[str] = None, recipe_path: Optional[str] = None):
         self.ai_dir = Path(__file__).resolve().parent.parent / "ai"
 
+        v2_engine = self.ai_dir / "yolo26n_v2_fp16.engine"
         default_engine = self.ai_dir / "yolo26n_fp16.engine"
         test_engine = self.ai_dir / "yolo26n_fp16.engine.test"
+        v2_onnx = self.ai_dir / "yolo26n_v2.onnx"
         onnx_path = self.ai_dir / "yolo26n.onnx"
 
-        # 사용 가능한 모델 파일 탐색
+        # 사용 가능한 모델 파일 탐색 (yolo26n_v2_fp16.engine 최우선)
         if engine_path:
             chosen_model = Path(engine_path)
+        elif v2_engine.exists() and v2_engine.stat().st_size > 50000:
+            chosen_model = v2_engine
         elif default_engine.exists() and default_engine.stat().st_size > 50000:
             chosen_model = default_engine
         elif test_engine.exists() and test_engine.stat().st_size > 50000:
             chosen_model = test_engine
+        elif v2_onnx.exists():
+            chosen_model = v2_onnx
         elif onnx_path.exists():
             chosen_model = onnx_path
         else:
-            chosen_model = default_engine
+            chosen_model = v2_engine
 
         self.model_path = chosen_model
 
