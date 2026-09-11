@@ -60,8 +60,10 @@ flowchart TD
 
 | 파일 | 역할 | 설명 |
 |:---|:---|:---|
-| [`run_admin.sh`](run_admin.sh) | 관제 PC 실행 | 가상환경 및 패키지 자동 감지·설치 후 관리자 GUI 즉시 실행 |
-| [`run_worker.sh`](run_worker.sh) | 작업자 앱 실행 | UART udev 영구 권한, 가상환경, 패키지 자동 세팅 후 작업자 GUI 즉시 실행 |
+| [`run_admin.sh`](run_admin.sh) | 관제 PC 실행 (Linux) | 가상환경 및 패키지 자동 감지·설치 후 관리자 GUI 즉시 실행 |
+| [`run_admin.bat`](run_admin.bat) | 관제 PC 실행 (Windows) | Windows 원클릭(더블 클릭) 가상환경 자동 생성 및 관리자 GUI 실행 |
+| [`run_admin.ps1`](run_admin.ps1) | 관제 PC 실행 (PowerShell) | Windows PowerShell 환경 가상환경 자동 세팅 및 관리자 GUI 실행 |
+| [`run_worker.sh`](run_worker.sh) | 작업자 앱 실행 (Jetson/Linux) | UART udev 영구 권한, 가상환경, 패키지 자동 세팅 후 작업자 GUI 즉시 실행 |
 | [`requirements.txt`](requirements.txt) | 통합 패키지 명세 | Admin, Worker, AI 추론, 테스트 도구 전체를 단일 파일로 관리 |
 
 ---
@@ -94,9 +96,16 @@ flowchart TD
 가상환경 설치나 권한 설정을 별도로 할 필요 없이, 프로젝트 루트 디렉토리에서 아래 스크립트만 실행하면 **최초 1회 패키지 및 UART 권한이 자동 설정된 후 바로 실행**됩니다:
 
 - **중앙 관제 프로그램 (Admin) 실행**:
-  ```bash
-  bash run_admin.sh
-  ```
+  - **Linux**:
+    ```bash
+    bash run_admin.sh
+    ```
+  - **Windows**:
+    - 파일 탐색기에서 `run_admin.bat` 더블 클릭, 또는
+    - 명령 프롬프트(CMD) / PowerShell:
+      ```cmd
+      run_admin.bat
+      ```
 
 - **작업자 프로그램 (Worker) 실행**:
   ```bash

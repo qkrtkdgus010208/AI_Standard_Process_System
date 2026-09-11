@@ -30,9 +30,9 @@ if [ ! -f ".venv/.installed" ]; then
     echo "⚙️ 필수 환경을 설정합니다 (시스템 패키지, 가상환경 및 의존성 패키지)..."
     sudo apt update && sudo apt install -y v4l-utils python3-pyqt5 python3-venv
 
-    # 이전 실행 실패 등으로 불완전한 가상환경이 남아있다면 초기화
-    if [ -d ".venv" ] && [ ! -f ".venv/.installed" ]; then
-        echo "⚠️ 미완료된 기존 가상환경(.venv)을 정리하고 새로 구성합니다..."
+    # 이전 실행 실패 또는 다른 OS(Windows) 가상환경이 남아있다면 초기화
+    if [ -d ".venv" ] && { [ ! -f ".venv/.installed" ] || [ ! -f ".venv/bin/activate" ]; }; then
+        echo "⚠️ 다른 운영체제에서 생성되었거나 미완료된 기존 가상환경(.venv)을 정리하고 새로 구성합니다..."
         rm -rf .venv
     fi
 

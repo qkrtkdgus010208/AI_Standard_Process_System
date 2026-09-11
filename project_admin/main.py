@@ -127,7 +127,7 @@ def _verify_root_execution() -> None:
             f"   프로젝트 루트: {project_root}\n\n"
             f"👉 실행 방법:\n"
             f"   cd {project_root}\n"
-            f"   bash run_admin.sh\n\n"
+            f"   bash run_admin.sh (Linux) 또는 run_admin.bat (Windows)\n\n"
         )
         sys.exit(1)
 

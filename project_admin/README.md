@@ -71,7 +71,7 @@ flowchart LR
 - **관제 서버 → 작업자**: `Jetson IP:5000` (관리자 메시지 및 호출 전송)
 - 동적 IP 바인딩: 로그인 시 접속한 IP를 `WorkerEndpointRegistry`에 등록하여 별도의 고정 IP 설정 없이 통신.
 
-## 4. 설치 및 실행 (Linux 기준)
+## 4. 설치 및 실행 (Linux & Windows)
 
 > [!IMPORTANT]
 > **모든 프로그램 실행은 반드시 프로젝트 최상위 루트 디렉토리(`AI_Standard_Process_System/`)에서 수행해야 합니다.**  
@@ -79,10 +79,22 @@ flowchart LR
 
 가상환경 및 의존성 패키지가 없으면 최초 1회 자동 설치 후 즉시 실행됩니다:
 
+### Linux (Ubuntu / Jetson)
 ```bash
 # 프로젝트 최상위 루트 디렉토리(AI_Standard_Process_System/)에서 실행
 bash run_admin.sh
 ```
+
+### Windows
+- 파일 탐색기에서 [`run_admin.bat`](../run_admin.bat) **더블 클릭 (원클릭 실행)**, 또는
+- 명령 프롬프트(CMD) / PowerShell:
+  ```cmd
+  run_admin.bat
+  ```
+- (선택 사항) PowerShell 전용 스크립트 실행 시:
+  ```powershell
+  .\run_admin.ps1
+  ```
 
 ### 개발/시연용 샘플 데이터 생성
 프로젝트 루트 디렉토리에서 아래 명령어를 실행합니다:
