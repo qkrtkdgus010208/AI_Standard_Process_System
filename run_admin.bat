@@ -52,44 +52,29 @@ rmdir /s /q ".venv" >nul 2>&1
 :CHECK_VENV
 if exist ".venv\Scripts\python.exe" goto :VENV_READY
 
-echo [진행] Windows 가상환경 .venv 를 생성합니다...
+echo [진행] Windows 가상환경 .venv 를 새로 생성합니다...
 %PYTHON_CMD% -m venv --prompt venv .venv
 if not exist ".venv\Scripts\python.exe" goto :VENV_FAIL
 
-echo [진행] 가상환경에 필수 패키지를 설치합니다 - 최초 1회, 수 분 소요될 수 있습니다...
-".venv\Scripts\python.exe" -m pip install --upgrade pip
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
-if %ERRORLEVEL% EQU 0 goto :INSTALL_OK
+:VENV_READY
+rem [3] 가상환경 활성화
+if exist ".venv\Scripts\activate.bat" (
+    echo [진행] 가상환경 (venv)을 활성화합니다...
+    call ".venv\Scripts\activate.bat"
+)
+
+rem [4] 패키지 검사 및 다운로드/설치 (이미 설치된 항목은 자동 스킵)
+echo [진행] 가상환경 필수 패키지를 확인 및 동기화합니다 (requirements_admin.txt)...
+pip install -r requirements_admin.txt
+if %ERRORLEVEL% EQU 0 goto :RUN_APP
 
 echo.
-echo [경고] requirements.txt 패키지 설치 중 오류가 발생했습니다.
+echo [경고] requirements_admin.txt 패키지 설치 중 오류가 발생했습니다.
 echo        관리자 필수 패키지 PyQt5 를 단독 설치 시도합니다...
-".venv\Scripts\python.exe" -m pip install PyQt5
+pip install PyQt5
 if %ERRORLEVEL% NEQ 0 goto :PYQT_FAIL
 
-:INSTALL_OK
-echo installed > ".venv\.installed"
-echo [성공] 패키지 설치가 완료되었습니다.
-echo.
-goto :VENV_READY
-
-:VENV_FAIL
-echo [오류] 가상환경 생성에 실패했습니다.
-goto :EXIT_SCRIPT
-
-:PYQT_FAIL
-echo.
-echo [치명적 오류] PyQt5 설치에 실패했습니다.
-echo 원인: 사용 중인 Python 버전과 PyQt5 바이너리 간 호환성 문제일 수 있습니다.
-echo 해결: Python 3.11 또는 3.12 를 설치하신 후 다시 실행해 주세요.
-goto :EXIT_SCRIPT
-
-:VENV_READY
-echo [정보] Windows 가상환경 .venv 준비 완료.
-echo.
-
-rem [3] 가상환경 활성화
-if exist ".venv\Scripts\activate.bat" call ".venv\Scripts\activate.bat"
+:RUN_APP
 
 rem [4] 관리자 프로그램 실행
 echo ==============================================================================
@@ -107,6 +92,18 @@ goto :EXIT_SCRIPT
 
 :RUN_OK
 echo [완료] 프로그램이 정상적으로 종료되었습니다.
+goto :EXIT_SCRIPT
+
+:VENV_FAIL
+echo [오류] 가상환경 생성에 실패했습니다.
+goto :EXIT_SCRIPT
+
+:PYQT_FAIL
+echo.
+echo [치명적 오류] PyQt5 설치에 실패했습니다.
+echo 원인: 사용 중인 Python 버전과 PyQt5 바이너리 간 호환성 문제일 수 있습니다.
+echo 해결: Python 3.11 또는 3.12 를 설치하신 후 다시 실행해 주세요.
+goto :EXIT_SCRIPT
 
 :EXIT_SCRIPT
 echo.

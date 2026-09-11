@@ -37,37 +37,26 @@ if ((Test-Path ".venv") -and -not (Test-Path ".venv\Scripts\Activate.ps1")) {
     Remove-Item -Recurse -Force ".venv"
 }
 
-if (-not (Test-Path ".venv\.installed")) {
-    Write-Host "`n⚙️ 필수 환경을 설정합니다 (Windows 가상환경 생성 및 의존성 패키지 설치)..." -ForegroundColor Yellow
-    if (Test-Path ".venv") {
-        Remove-Item -Recurse -Force ".venv"
-    }
-
-    Write-Host "📦 Windows 가상환경(.venv)을 생성합니다..."
+if (-not (Test-Path ".venv\Scripts\Activate.ps1")) {
+    Write-Host "`n⚙️ Windows 가상환경(.venv)을 새로 생성합니다..." -ForegroundColor Yellow
     if ($pythonCmd -eq "python") {
         python -m venv --prompt venv .venv
     } else {
         py -3 -m venv --prompt venv .venv
     }
-
-    if (-not (Test-Path ".venv\Scripts\Activate.ps1")) {
-        Write-Host "❌ 가상환경 생성에 실패했습니다. Python 버전을 확인해 주세요." -ForegroundColor Red
-        pause
-        exit 1
-    }
-
-    Write-Host "⚡ 가상환경 (venv)을 활성화합니다..."
-    & ".venv\Scripts\Activate.ps1"
-
-    Write-Host "📥 활성화된 (venv) 가상환경에 필수 패키지를 설치합니다..."
-    python -m pip install --upgrade pip
-    pip install -r requirements.txt
-
-    New-Item -ItemType File -Path ".venv\.installed" -Force | Out-Null
-    Write-Host "✅ 의존성 패키지 설치가 완료되었습니다!" -ForegroundColor Green
-} else {
-    & ".venv\Scripts\Activate.ps1"
 }
+
+if (-not (Test-Path ".venv\Scripts\Activate.ps1")) {
+    Write-Host "❌ 가상환경 생성에 실패했습니다. Python 버전을 확인해 주세요." -ForegroundColor Red
+    pause
+    exit 1
+}
+
+Write-Host "⚡ 가상환경 (venv)을 활성화합니다..."
+& ".venv\Scripts\Activate.ps1"
+
+Write-Host "📥 의존성 패키지를 확인 및 동기화합니다 (이미 설치된 항목은 자동 스킵)..."
+pip install -r requirements_admin.txt
 
 # [3단계] 프로그램 실행
 Write-Host "`n🚀 중앙 관제 프로그램을 실행합니다..." -ForegroundColor Green

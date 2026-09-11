@@ -46,48 +46,39 @@ for dev in /dev/ttyACM* /dev/ttyUSB* /dev/ttyTHS*; do
     fi
 done
 
-# 2. 가상환경 및 패키지 자동 세팅 (최초 1회 또는 설치 미완료 시)
-if [ ! -f ".venv/.installed" ]; then
-    echo "⚙️ 필수 환경을 설정합니다 (시스템 패키지, 가상환경 및 의존성 패키지)..."
-    sudo apt update && sudo apt install -y v4l-utils python3-pyqt5 python3-venv
+# 2. 카메라 하드웨어 제어 유틸리티(v4l-utils) 자동 설치 확인
+if ! command -v v4l2-ctl >/dev/null 2>&1; then
+    echo "📷 카메라 하드웨어 제어 유틸리티(v4l-utils / v4l2-ctl)를 설치합니다..."
+    sudo apt update && sudo apt install -y v4l-utils
+fi
 
-    # 이전 실행 실패 등으로 불완전한 가상환경이 남아있다면 초기화
-    if [ -d ".venv" ] && [ ! -f ".venv/.installed" ]; then
-        echo "⚠️ 미완료된 기존 가상환경(.venv)을 정리하고 새로 구성합니다..."
-        rm -rf .venv
-    fi
-
-    echo "📦 가상환경(.venv)을 생성합니다..."
+# 3. 가상환경(.venv) 생성 (미존재 시)
+if [ ! -d ".venv" ] || [ ! -f ".venv/bin/activate" ]; then
+    echo "⚙️ 가상환경(.venv)을 새로 생성합니다..."
+    sudo apt update && sudo apt install -y python3-pyqt5 python3-venv
+    rm -rf .venv
     python3 -m venv --system-site-packages --prompt venv .venv
-
-    # 가상환경 프롬프트 이름 통일 ('(.venv)' -> '(venv)')
     if [ -f ".venv/bin/activate" ]; then
         sed -i "s/VIRTUAL_ENV_PROMPT='(.venv) '/VIRTUAL_ENV_PROMPT='(venv) '/g" ".venv/bin/activate" 2>/dev/null || true
     fi
+fi
 
-    # [핵심] 시작부터 (venv) 활성화 후 설치 진행!
-    echo "⚡ 가상환경 (venv)을 활성화합니다..."
-    source .venv/bin/activate
+# 4. 가상환경 활성화 및 패키지 검사/설치 (이미 설치된 패키지는 자동으로 건너뜀)
+echo "⚡ 가상환경 (venv)을 활성화합니다..."
+source .venv/bin/activate
 
-    echo "📥 활성화된 (venv) 가상환경에 패키지를 설치합니다..."
-    pip install --upgrade pip
-    pip install -r requirements.txt
+echo "📥 의존성 패키지를 확인 및 동기화합니다 (이미 설치된 항목은 자동 스킵)..."
+pip install -r requirements_worker.txt
 
-    # Jetson Orin 전용 PyTorch(CUDA 12.4) 휠 자동 복원 (PyPI 일반 x86 휠로 덮어써지는 것 방지)
+# Jetson Orin 전용 PyTorch(CUDA 가속) 상태 확인 및 필요 시 자동 복원
+if ! python3 -c "import torch; assert torch.cuda.is_available()" >/dev/null 2>&1; then
     if [ -f "/home/aidl/work/torch_whl/torch-2.3.0-cp310-cp310-linux_aarch64.whl" ]; then
+        echo "🔧 Jetson Orin CUDA 가속 지원 PyTorch를 복원합니다..."
         pip install --force-reinstall --no-deps /home/aidl/work/torch_whl/torch-2.3.0-cp310-cp310-linux_aarch64.whl /home/aidl/work/torch_whl/torchvision-0.18.0a0+6043bc2-cp310-cp310-linux_aarch64.whl >/dev/null 2>&1 || true
-    fi
-
-    touch .venv/.installed
-    echo "✅ 의존성 설치가 완료되었습니다!"
-else
-    # 이미 설치된 경우에도 시작부터 (venv) 활성화
-    if [ -f ".venv/bin/activate" ]; then
-        source .venv/bin/activate
     fi
 fi
 
-# 3. 새 터미널 창에서도 가상환경 (venv)이 자동 활성화되도록 ~/.bashrc에 등록
+# 5. 새 터미널 창에서도 가상환경 (venv)이 자동 활성화되도록 ~/.bashrc에 등록
 if [ -f "$PROJECT_ROOT/.venv/bin/activate" ] && ! grep -Fqs "$PROJECT_ROOT/.venv/bin/activate" "$HOME/.bashrc"; then
     echo "🔗 새 터미널 창에서도 (venv)가 자동 활성화되도록 ~/.bashrc에 등록합니다..."
     cat << EOF >> "$HOME/.bashrc"
@@ -99,7 +90,7 @@ fi
 EOF
 fi
 
-# 4. 프로그램 실행 및 (venv) 유지
+# 6. 프로그램 실행 및 (venv) 유지
 echo "🚀 작업자 프로그램을 실행합니다... (가상환경: ${VIRTUAL_ENV:-미활성화})"
 python "$PROJECT_ROOT/project_worker/main.py" "$@"
 

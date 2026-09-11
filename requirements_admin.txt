@@ -1,0 +1,24 @@
+# ==============================================================================
+# AI Standard Process System - 관리자 관제 PC 의존성 (requirements_admin.txt)
+# ==============================================================================
+# 중앙 관제 프로그램 (Admin 관제 PC - Windows) 전용 Python 패키지 목록입니다.
+# [실행 방법]
+#   Windows 배치 파일: .\run_admin.bat
+#   PowerShell 스크립트: .\run_admin.ps1
+#
+# [수동 설치 시 (프로젝트 최상위 루트 디렉토리 기준)]
+#   pip install -r requirements_admin.txt
+# ==============================================================================
+
+# [1] GUI 프레임워크 (Admin 관제 프로그램 메인 UI)
+PyQt5>=5.14.0,<6.0.0
+
+# [2] 유틸리티 및 타입 호환성 (TypedDict, NotRequired 호환 등)
+typing_extensions>=4.5.0
+
+# [3] 개발 및 단위 테스트 도구 (관리자 DB, Gateway, 서비스 로직 검증)
+pytest>=7.0.0
+pytest-qt>=4.2.0
+pytest-cov>=4.0.0
+flake8>=6.0.0
+black>=23.0.0

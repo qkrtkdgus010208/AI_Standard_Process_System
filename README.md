@@ -62,8 +62,9 @@ flowchart TD
 |:---|:---|:---|
 | [`run_admin.bat`](run_admin.bat) | 관제 PC 실행 (Windows) | Windows 원클릭(더블 클릭) 가상환경 자동 생성 및 관리자 GUI 실행 |
 | [`run_admin.ps1`](run_admin.ps1) | 관제 PC 실행 (PowerShell) | Windows PowerShell 환경 가상환경 자동 세팅 및 관리자 GUI 실행 |
-| [`run_worker.sh`](run_worker.sh) | 작업자 앱 실행 (Jetson/Linux) | UART udev 영구 권한, 가상환경, 패키지 자동 세팅 후 작업자 GUI 즉시 실행 |
-| [`requirements.txt`](requirements.txt) | 통합 패키지 명세 | Admin, Worker, AI 추론, 테스트 도구 전체를 단일 파일로 관리 |
+| [`run_worker.sh`](run_worker.sh) | 작업자 단말 실행 (Jetson/Linux) | Jetson/Linux 가상환경 자동 세팅, 하드웨어 권한 점검 및 작업자 GUI 실행 |
+| [`requirements_admin.txt`](requirements_admin.txt) | 관제 PC 패키지 명세 | Admin 관제 PC 전용 경량 패키지 명세 (PyQt5, 테스트 도구) |
+| [`requirements_worker.txt`](requirements_worker.txt) | 작업자 단말 패키지 명세 | Jetson 작업자 단말 패키지 명세 (PyQt5, OpenCV, YOLO, PySerial, v4l2-ctl 시스템 도구) |
 
 ---
 

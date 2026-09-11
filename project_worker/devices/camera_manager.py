@@ -49,6 +49,7 @@ class CameraThread(QThread):
         self._mock_frame_no = 0
         self._is_connected = False
         self._last_frame_time = 0.0
+        self._v4l2_warned = False
         # Mock 배경을 한 번만 생성해 두고 스캔선만 덧그림
         self._mock_bg: Optional[QImage] = None
 
@@ -125,7 +126,11 @@ class CameraThread(QThread):
                     pass
             self._capture = None
 
-    def _apply_v4l2_ctl(self, device_path: Optional[str] = None) -> None:
+    def _apply_v4l2_ctl(
+        self,
+        device_path: Optional[str] = None,
+        verbose: bool = True,
+    ) -> None:
         """C270 카메라 하드웨어 레벨 설정을 위해 v4l2-ctl을 직접 실행합니다."""
         dev = device_path or getattr(
             config, "CAMERA_V4L2_DEVICE", f"/dev/video{config.USB_CAMERA_INDEX}"
@@ -155,13 +160,16 @@ class CameraThread(QThread):
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            print(
-                f"[Camera] v4l2-ctl 설정 성공 ({dev}): auto_exposure={auto_exp}, exposure={exp}, contrast={contrast}, sharpness={sharpness}"
-            )
+            if verbose:
+                print(
+                    f"[Camera] v4l2-ctl 설정 성공 ({dev}): auto_exposure={auto_exp}, exposure={exp}, contrast={contrast}, sharpness={sharpness}"
+                )
         except FileNotFoundError:
-            print(
-                "[Camera] v4l2-ctl 명령어를 찾을 수 없습니다. (sudo apt install v4l-utils 권장) OpenCV 속성으로 설정합니다."
-            )
+            if not self._v4l2_warned:
+                self._v4l2_warned = True
+                print(
+                    "[Camera] v4l2-ctl 명령어를 찾을 수 없습니다. (sudo apt install v4l-utils 권장) OpenCV 기본 드라이버로 제어합니다."
+                )
         except subprocess.CalledProcessError as e:
             print(
                 f"[Camera] v4l2-ctl 실행 실패 ({dev}): {e.stderr.strip() if e.stderr else e}"
@@ -172,8 +180,8 @@ class CameraThread(QThread):
     def _open_capture(self):
         """설정에 따라 USB 또는 CSI Camera 객체를 생성하고 pass_fail_test 설정을 적용합니다."""
         if self.backend == "usb":
-            # 1. C270 하드웨어 직접 v4l2-ctl 제어 (카메라 오픈 전 적용)
-            self._apply_v4l2_ctl()
+            # 1. C270 하드웨어 직접 v4l2-ctl 제어 (카메라 오픈 전 사전 적용)
+            self._apply_v4l2_ctl(verbose=False)
 
             capture = cv2.VideoCapture(config.USB_CAMERA_INDEX)
             if not capture.isOpened():
@@ -183,16 +191,18 @@ class CameraThread(QThread):
             capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
             capture.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
 
-            # pass_fail_test.py와 동일한 카메라 초기화 시퀀스
+            # pass_fail_test.py와 동일한 카메라 초기화 시퀀스 (센서 안정화)
             for _ in range(30):
                 capture.read()
 
-            self._apply_v4l2_ctl()
+            # 2. 드라이버의 자동 노출 리셋 방지 덮어쓰기
+            self._apply_v4l2_ctl(verbose=False)
 
             for _ in range(10):
                 capture.read()
 
-            self._apply_v4l2_ctl()
+            # 3. 최종 수동 노출 및 화질 고정 확정
+            self._apply_v4l2_ctl(verbose=True)
 
             return capture
         if self.backend == "csi":
