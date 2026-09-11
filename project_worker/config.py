@@ -50,8 +50,9 @@ CSI_GSTREAMER_PIPELINE = (
     "videoconvert ! video/x-raw, format=(string)BGR ! appsink drop=1"
 )
 
-# AI 설정: tensorrt (실제 yolo26n_v2_fp16.engine 및 racing_car.json/pickup_truck.json 기반 검사)
+# AI 설정: tensorrt (실제 yollo26n_fp32.engine 및 racing_car.json/pickup_truck.json 기반 검사)
 AI_BACKEND = "tensorrt"
+AI_ENGINE_MODEL = "yollo26n_fp32.engine"
 
 # 기본 제품 목록 (서버 미연동 시 또는 fallback용)
 DEFAULT_PRODUCTS = [

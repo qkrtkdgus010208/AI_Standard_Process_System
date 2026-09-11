@@ -18,7 +18,13 @@ DEFAULT_NAMES = {
 class Detector:
     def __init__(self, model_path):
         self.model = YOLO(str(model_path), task="detect")
-        self.names = getattr(self.model, "names", DEFAULT_NAMES) or DEFAULT_NAMES
+        names = getattr(self.model, "names", None)
+        if not names or len(names) != len(DEFAULT_NAMES) or 0 not in names or names[0] != DEFAULT_NAMES[0]:
+            self.names = DEFAULT_NAMES
+            if hasattr(self.model, "names"):
+                self.model.names = DEFAULT_NAMES
+        else:
+            self.names = names
 
     def detect(self, frame):
         results = self.model(frame, imgsz=640, conf=0.5, verbose=False)

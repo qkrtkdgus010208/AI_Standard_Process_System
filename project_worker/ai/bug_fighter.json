@@ -1,0 +1,86 @@
+{
+    "1": {
+        "reference": "car_base",
+        "targets": [
+            {
+                "class": "front_bumper",
+                "expected_x": 0.5221,
+                "expected_y": -0.0283,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            }
+        ]
+    },
+    "2": {
+        "reference": "car_base",
+        "targets": [
+            {
+                "class": "black_plate_1x6",
+                "required_count": 2,
+                "positions": [
+                    {
+                        "expected_x": 0.6185,
+                        "expected_y": 0.0197,
+                        "tolerance_x": 0.04,
+                        "tolerance_y": 0.1
+                    },
+                    {
+                        "expected_x": 0.5935,
+                        "expected_y": -0.3586,
+                        "tolerance_x": 0.07,
+                        "tolerance_y": 0.1
+                    }
+                ]
+            },
+            {
+                "class": "red_black_block_1x2",
+                "expected_x": 0.2952,
+                "expected_y": -0.1887,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            },
+            {
+                "class": "rear_spoiler",
+                "expected_x": -0.4623,
+                "expected_y": -0.2500,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            }
+        ]
+    },
+    "3": {
+        "reference": "car_base",
+        "targets": [
+            {
+                "class": "black_L_plate",
+                "required_count": 2,
+                "positions": [
+                    {
+                        "expected_x": 0.3515,
+                        "expected_y": -0.0799,
+                        "tolerance_x": 0.1,
+                        "tolerance_y": 0.1
+                    },
+                    {
+                        "expected_x": 0.3400,
+                        "expected_y": -0.3666,
+                        "tolerance_x": 0.1,
+                        "tolerance_y": 0.1
+                    }
+                ]
+            }
+        ]
+    },
+    "4": {
+        "reference": "car_base",
+        "targets": [
+            {
+                "class": "rear_windshield",
+                "expected_x": 0.1768,
+                "expected_y": -0.2990,
+                "tolerance_x": 0.1,
+                "tolerance_y": 0.1
+            }
+        ]
+    }
+}

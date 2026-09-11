@@ -48,17 +48,23 @@ target_configs = step_config["targets"]
 
 
 # ============================================================
-# 2. Detector 생성 (yolo26n_v2_fp16.engine 우선)
+# 2. Detector 생성 (config.AI_ENGINE_MODEL 기반)
 # ============================================================
 
-model_candidates = [
-    "yolo26n_v2_fp16.engine",
-    "yolo26n_fp16.engine",
-    "yolo26n_v2.onnx",
-    "yolo26n.onnx",
-    "step_data_fliplr_add_single_yolo26n_best.pt",
-]
-model_file = next((m for m in model_candidates if os.path.exists(m)), "yolo26n_v2_fp16.engine")
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_dir = os.path.abspath(os.path.join(_script_dir, ".."))
+if _project_dir not in sys.path:
+    sys.path.insert(0, _project_dir)
+
+try:
+    import config
+    engine_model_name = getattr(config, "AI_ENGINE_MODEL", "yollo26n_fp32.engine")
+except ImportError:
+    engine_model_name = "yollo26n_fp32.engine"
+
+model_file = os.path.join(_script_dir, engine_model_name)
+if not os.path.exists(model_file):
+    model_file = engine_model_name
 detector = Detector(model_file)
 print(f"[Detector] 로드된 모델: {model_file}")
 

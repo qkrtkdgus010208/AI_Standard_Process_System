@@ -1,6 +1,6 @@
 """AI Framework와 PyQt UI 사이의 의존성을 분리하는 판정 모듈입니다.
 
-TensorRT 엔진(yolo26n_fp16.engine)과 recipe.json에 기반하여
+TensorRT 엔진(yollo26n_fp32.engine)과 recipe.json에 기반하여
 실시간 프레임의 조립 정합성을 검증하고, 판정 결과와 함께
 검출 바운딩 박스가 시각화된 프레임 및 상세 판정 사유를 생성합니다.
 """
@@ -159,30 +159,10 @@ class TensorRTJudge(BaseJudge):
 
     def __init__(self, engine_path: Optional[str] = None, recipe_path: Optional[str] = None):
         self.ai_dir = Path(__file__).resolve().parent.parent / "ai"
+        self.model_path = Path(engine_path) if engine_path else (self.ai_dir / config.AI_ENGINE_MODEL)
 
-        v2_engine = self.ai_dir / "yolo26n_v2_fp16.engine"
-        default_engine = self.ai_dir / "yolo26n_fp16.engine"
-        test_engine = self.ai_dir / "yolo26n_fp16.engine.test"
-        v2_onnx = self.ai_dir / "yolo26n_v2.onnx"
-        onnx_path = self.ai_dir / "yolo26n.onnx"
-
-        # 사용 가능한 모델 파일 탐색 (yolo26n_v2_fp16.engine 최우선)
-        if engine_path:
-            chosen_model = Path(engine_path)
-        elif v2_engine.exists() and v2_engine.stat().st_size > 50000:
-            chosen_model = v2_engine
-        elif default_engine.exists() and default_engine.stat().st_size > 50000:
-            chosen_model = default_engine
-        elif test_engine.exists() and test_engine.stat().st_size > 50000:
-            chosen_model = test_engine
-        elif v2_onnx.exists():
-            chosen_model = v2_onnx
-        elif onnx_path.exists():
-            chosen_model = onnx_path
-        else:
-            chosen_model = v2_engine
-
-        self.model_path = chosen_model
+        if not self.model_path.exists():
+            raise FileNotFoundError(f"TensorRT 엔진 파일을 찾을 수 없습니다: {self.model_path}")
 
         # Recipe 초기 경로 결정
         if recipe_path:
