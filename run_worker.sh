@@ -65,6 +65,7 @@ fi
 
 # 4. 가상환경 활성화 및 패키지 검사/설치 (이미 설치된 패키지는 자동으로 건너뜀)
 echo "⚡ 가상환경 (venv)을 활성화합니다..."
+command -v deactivate >/dev/null 2>&1 && deactivate
 source .venv/bin/activate
 
 echo "📥 의존성 패키지를 확인 및 동기화합니다 (이미 설치된 항목은 자동 스킵)..."
@@ -85,6 +86,7 @@ if [ -f "$PROJECT_ROOT/.venv/bin/activate" ] && ! grep -Fqs "$PROJECT_ROOT/.venv
 
 # AI Standard Process System - 가상환경 자동 활성화
 if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
+    command -v deactivate >/dev/null 2>&1 && deactivate
     source "$PROJECT_ROOT/.venv/bin/activate"
 fi
 EOF
