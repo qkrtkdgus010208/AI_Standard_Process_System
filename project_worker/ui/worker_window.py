@@ -570,7 +570,6 @@ class WorkerWindow(QMainWindow):
             if recipe_name:
                 self.add_log("info", f"복원 제품 레시피 적용: {recipe_name}")
 
-
         QMessageBox.information(
             self,
             "이전 작업 복원",
@@ -764,11 +763,7 @@ class WorkerWindow(QMainWindow):
         if frame is None:
             return
         if isinstance(frame, QImage):
-            self.camera_view.setPixmap(
-                QPixmap.fromImage(frame).scaled(
-                    self.camera_view.size(), Qt.IgnoreAspectRatio, Qt.FastTransformation
-                )
-            )
+            self.camera_view.setPixmap(QPixmap.fromImage(frame))
         elif cv2 is not None and hasattr(frame, "shape"):
             fh, fw = frame.shape[:2]
             qimg = QImage(frame.data, fw, fh, fw * 3, QImage.Format_BGR888)

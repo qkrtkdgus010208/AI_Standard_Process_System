@@ -1,5 +1,9 @@
-import cv2
 import json
+import os
+import subprocess
+import sys
+
+import cv2
 
 from detector import Detector
 from inspector import (
@@ -20,9 +24,6 @@ STEP = 6
 # ============================================================
 # 1. Recipe 로드
 # ============================================================
-
-import os
-import sys
 
 # 인자 또는 환경변수로부터 레시피 파일 선택 (기본값: racing_car.json)
 recipe_arg = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("RECIPE_FILE", "racing_car.json")
@@ -110,8 +111,6 @@ for _ in range(30):
 # ============================================================
 # 6. 카메라 설정 (C270 v4l2-ctl 하드웨어 설정)
 # ============================================================
-
-import subprocess
 
 try:
     subprocess.run([

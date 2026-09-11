@@ -60,12 +60,13 @@ class UartReceiverThread(QThread):
             self.status_changed.emit("pyserial이 설치되지 않았습니다.", False)
             return
 
-        # 후보 포트 자동 탐색 (기본 설정 포트가 없으면 다른 시리얼 포트 확인)
+        # 후보 포트 자동 탐색 (기본 설정 포트가 없으면 실제 연결된 USB 시리얼 포트 확인)
+        # 젯슨 온보드 40핀 UART(/dev/ttyTHS*)는 상시 생성되어 있어 미연결 오인 방지를 위해 제외
         actual_port = self.port
         if not os.path.exists(actual_port):
             candidates = [
-                "/dev/ttyACM0", "/dev/ttyUSB0",
-                "/dev/ttyUSB1", "/dev/ttyACM1", "/dev/ttyTHS1",
+                "/dev/ttyACM0", "/dev/ttyACM1",
+                "/dev/ttyUSB0", "/dev/ttyUSB1",
             ]
             for candidate in candidates:
                 if os.path.exists(candidate):

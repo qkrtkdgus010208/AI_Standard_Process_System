@@ -30,7 +30,8 @@ def send_json_request(payload: dict) -> dict:
         raise ConnectionError("Monitoring PC에서 응답이 없습니다.")
     if b"\n" not in buffer:
         raise ConnectionError("Monitoring PC 응답이 허용된 크기를 초과했습니다.")
-    return json.loads(buffer.decode("utf-8").splitlines()[0])
+    line, _, _ = buffer.partition(b"\n")
+    return json.loads(line.decode("utf-8"))
 
 
 def check_monitoring_server_connection(timeout: float = 1.0) -> tuple[bool, str]:

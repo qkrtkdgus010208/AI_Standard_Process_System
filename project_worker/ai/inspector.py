@@ -1,14 +1,6 @@
 import itertools
 
 
-def check_class_exists(detections, target_class_id):
-    for obj in detections:
-        if obj["class_id"] == target_class_id:
-            return True
-
-    return False
-
-
 def find_by_class(detections, target_class_id):
     for obj in detections:
         if obj["class_id"] == target_class_id:
@@ -17,13 +9,7 @@ def find_by_class(detections, target_class_id):
 
 
 def find_all_by_class(detections, target_class_id):
-    results = []
-
-    for obj in detections:
-        if obj["class_id"] == target_class_id:
-            results.append(obj)
-
-    return results
+    return [obj for obj in detections if obj["class_id"] == target_class_id]
 
 
 def check_relative_position(

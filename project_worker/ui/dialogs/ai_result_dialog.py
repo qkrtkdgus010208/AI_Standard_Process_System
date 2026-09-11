@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QFont, QImage, QPixmap
+from PyQt5.QtGui import QColor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QPushButton, QSizePolicy, QVBoxLayout, QWidget,

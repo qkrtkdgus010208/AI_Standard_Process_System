@@ -102,13 +102,14 @@ class MonitoringGatewayThread(QThread):
         with client:
             client.settimeout(2.0)
             try:
-                buffer = b""
+                buffer = bytearray()
                 while b"\n" not in buffer and len(buffer) < 65536:
                     chunk = client.recv(4096)
                     if not chunk:
                         break
-                    buffer += chunk
-                request = json.loads(buffer.decode("utf-8").splitlines()[0])
+                    buffer.extend(chunk)
+                line, _, _ = buffer.partition(b"\n")
+                request = json.loads(line.decode("utf-8"))
                 response = self._process_request(request, client_ip)
             except (OSError, ValueError, IndexError, json.JSONDecodeError) as error:
                 response = {"ok": False, "message": f"잘못된 요청입니다: {error}"}
@@ -307,6 +308,3 @@ class MonitoringGatewayThread(QThread):
             except OSError:
                 pass
         self.wait(2500)
-        with self._sessions_lock:
-            self._sessions.clear()
-            self.endpoint_registry.clear()

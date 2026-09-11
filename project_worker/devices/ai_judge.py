@@ -6,7 +6,6 @@ TensorRT 엔진(yolo26n_fp16.engine)과 recipe.json에 기반하여
 """
 
 import json
-import os
 import random
 import threading
 import time
