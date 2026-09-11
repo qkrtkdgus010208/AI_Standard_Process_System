@@ -12,7 +12,9 @@
 # ==============================================================================
 
 # [1] GUI 프레임워크 (Admin 관제 PC & Worker 작업자 단말 공통)
-PyQt5>=5.15.6,<6.0.0
+# ARM64/Jetson 환경에서는 PyPI에 바이너리 휠이 제공되지 않으므로,
+# apt 패키지(sudo apt install python3-pyqt5) 및 venv(--system-site-packages)를 통해 사용합니다.
+PyQt5>=5.14.0,<6.0.0
 
 # [2] 비전 및 영상 처리 (Worker 카메라 & AI 검사)
 opencv-python-headless>=4.8.0
