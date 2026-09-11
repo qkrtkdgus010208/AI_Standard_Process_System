@@ -54,13 +54,12 @@ flowchart TD
 |:---|:---|:---|:---|:---|
 | [`project_stm/`](project_stm/) | STM32F411RE | C (Bare-metal), ARM GCC | 물리 버튼 입력, STEP 1~9 및 FAIL LED, 6종 부저 음향 제어 펌웨어 | [STM32 README](project_stm/README.md) |
 | [`project_worker/`](project_worker/) | Jetson Orin Nano / Linux | Python 3, PyQt5, OpenCV | 카메라 영상 표시, AI 판정, 공정 상태 머신, STM32 UART 연동 작업자 앱 | [Worker README](project_worker/README.md) |
-| [`project_admin/`](project_admin/) | 관제 PC / Linux | Python 3, PyQt5, SQLite | 실시간 공정 모니터링, 작업 상태 보존/복원, 계정 및 품질 통계 관제 앱 | [Admin README](project_admin/README.md) |
+| [`project_admin/`](project_admin/) | 관제 PC / Windows | Python 3, PyQt5, SQLite | 실시간 공정 모니터링, 작업 상태 보존/복원, 계정 및 품질 통계 관제 앱 | [Admin README](project_admin/README.md) |
 
 ### 루트 실행 및 환경 구성 파일
 
 | 파일 | 역할 | 설명 |
 |:---|:---|:---|
-| [`run_admin.sh`](run_admin.sh) | 관제 PC 실행 (Linux) | 가상환경 및 패키지 자동 감지·설치 후 관리자 GUI 즉시 실행 |
 | [`run_admin.bat`](run_admin.bat) | 관제 PC 실행 (Windows) | Windows 원클릭(더블 클릭) 가상환경 자동 생성 및 관리자 GUI 실행 |
 | [`run_admin.ps1`](run_admin.ps1) | 관제 PC 실행 (PowerShell) | Windows PowerShell 환경 가상환경 자동 세팅 및 관리자 GUI 실행 |
 | [`run_worker.sh`](run_worker.sh) | 작업자 앱 실행 (Jetson/Linux) | UART udev 영구 권한, 가상환경, 패키지 자동 세팅 후 작업자 GUI 즉시 실행 |
@@ -95,17 +94,12 @@ flowchart TD
 ### 4.1 프로그램 실행 (최초 실행 시 환경 자동 세팅)
 가상환경 설치나 권한 설정을 별도로 할 필요 없이, 프로젝트 루트 디렉토리에서 아래 스크립트만 실행하면 **최초 1회 패키지 및 UART 권한이 자동 설정된 후 바로 실행**됩니다:
 
-- **중앙 관제 프로그램 (Admin) 실행**:
-  - **Linux**:
-    ```bash
-    bash run_admin.sh
+- **중앙 관제 프로그램 (Admin - Windows PC) 실행**:
+  - 파일 탐색기에서 `run_admin.bat` 더블 클릭, 또는
+  - PowerShell / 명령 프롬프트(CMD):
+    ```powershell
+    .\run_admin.bat
     ```
-  - **Windows**:
-    - 파일 탐색기에서 `run_admin.bat` 더블 클릭, 또는
-    - PowerShell / 명령 프롬프트(CMD):
-      ```powershell
-      .\run_admin.bat
-      ```
 
 - **작업자 프로그램 (Worker) 실행**:
   ```bash

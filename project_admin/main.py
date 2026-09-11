@@ -37,12 +37,7 @@ class MonitoringApplication:
         """DB를 초기화한 뒤 로그인 화면을 표시합니다."""
         try:
             self.database_manager.initialize_database()
-            # 관리자 계정이 전혀 없는 환경(최초 실행 등)에서는 기본 계정(admin/1001)을 자동 생성합니다.
-            with self.database_manager.connect() as connection:
-                has_admin = connection.execute(
-                    "SELECT 1 FROM employees WHERE role = 'admin' LIMIT 1"
-                ).fetchone()
-            if not has_admin or config.AUTO_CREATE_SAMPLE_DATA:
+            if config.AUTO_CREATE_SAMPLE_DATA:
                 self.database_manager.insert_sample_data()
         except Exception as error:
             QMessageBox.critical(None, "초기화 오류", f"DB 초기화에 실패했습니다.\n{error}")
@@ -132,7 +127,7 @@ def _verify_root_execution() -> None:
             f"   프로젝트 루트: {project_root}\n\n"
             f"👉 실행 방법:\n"
             f"   cd {project_root}\n"
-            f"   bash run_admin.sh (Linux) 또는 .\run_admin.bat (Windows)\n\n"
+            f"   .\run_admin.bat\n\n"
         )
         sys.exit(1)
 

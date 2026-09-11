@@ -69,13 +69,7 @@ if (-not (Test-Path ".venv\.installed")) {
     & ".venv\Scripts\Activate.ps1"
 }
 
-# [3단계] 초기 DB 샘플 데이터 생성
-if (-not (Test-Path "project_admin\factory.db")) {
-    Write-Host "`n🗄️ 초기 데이터베이스가 없어 기본 관리자 계정(admin/admin1234)을 생성합니다..." -ForegroundColor Cyan
-    python project_admin\sample_data.py
-}
-
-# [4단계] 프로그램 실행
+# [3단계] 프로그램 실행
 Write-Host "`n🚀 중앙 관제 프로그램을 실행합니다..." -ForegroundColor Green
 try {
     python project_admin\main.py @args

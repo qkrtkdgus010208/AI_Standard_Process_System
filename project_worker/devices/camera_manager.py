@@ -39,7 +39,11 @@ class CameraThread(QThread):
 
     def __init__(self, backend: Optional[str] = None, parent=None):
         super().__init__(parent)
-        self.backend = (backend or config.CAMERA_BACKEND).lower()
+        self.backend = (
+            "mock"
+            if (config.TEST_MODE and backend is None)
+            else (backend or config.CAMERA_BACKEND).lower()
+        )
         self._running = False
         self._capture = None
         self._mock_frame_no = 0

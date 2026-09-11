@@ -72,6 +72,12 @@ if [ ! -f ".venv/.installed" ]; then
     echo "📥 활성화된 (venv) 가상환경에 패키지를 설치합니다..."
     pip install --upgrade pip
     pip install -r requirements.txt
+
+    # Jetson Orin 전용 PyTorch(CUDA 12.4) 휠 자동 복원 (PyPI 일반 x86 휠로 덮어써지는 것 방지)
+    if [ -f "/home/aidl/work/torch_whl/torch-2.3.0-cp310-cp310-linux_aarch64.whl" ]; then
+        pip install --force-reinstall --no-deps /home/aidl/work/torch_whl/torch-2.3.0-cp310-cp310-linux_aarch64.whl /home/aidl/work/torch_whl/torchvision-0.18.0a0+6043bc2-cp310-cp310-linux_aarch64.whl >/dev/null 2>&1 || true
+    fi
+
     touch .venv/.installed
     echo "✅ 의존성 설치가 완료되었습니다!"
 else

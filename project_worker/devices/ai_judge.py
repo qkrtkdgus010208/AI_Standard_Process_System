@@ -483,13 +483,23 @@ class TensorRTJudge(BaseJudge):
 
 
 def create_judge(backend: Optional[str] = None) -> BaseJudge:
-    """설정값에 따라 AI 구현체를 생성합니다."""
+    """설정값에 따라 AI 구현체를 생성합니다. 오류 시 MockJudge로 안전하게 자동 전환합니다."""
     selected = (backend or config.AI_BACKEND).lower()
-    if selected in ("tensorrt", "trt", "engine", "yolo", "actual"):
-        return TensorRTJudge()
-    if selected == "mock":
+    if config.TEST_MODE or selected == "mock":
         return MockJudge()
-    return TensorRTJudge()
+
+    if selected in ("tensorrt", "trt", "engine", "yolo", "actual"):
+        try:
+            return TensorRTJudge()
+        except Exception as error:
+            print(
+                f"\n⚠️ [AI Judge 경고] 실제 AI 모델/엔진 로드 실패 ({error})\n"
+                f"   원인: NVIDIA GPU 드라이버 버전 불일치 또는 TensorRT 엔진 로드 오류\n"
+                f"   조치: MockJudge(테스트 판정기)로 안전하게 자동 전환하여 실행합니다.\n"
+            )
+            return MockJudge()
+
+    return MockJudge()
 
 
 class AiInferenceThread(QThread):
