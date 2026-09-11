@@ -6,7 +6,11 @@
 # UART 시리얼 권한(udev) 및 가상환경(.venv)이 없으면 최초 1회 자동 설정 후 실행합니다.
 # ==============================================================================
 
-set -e
+(return 0 2>/dev/null) && SOURCED=1 || SOURCED=0
+
+if [ "$SOURCED" -eq 0 ]; then
+    set -e
+fi
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -18,7 +22,7 @@ if [ "$PWD" != "$PROJECT_ROOT" ]; then
     echo ""
     echo "👉 아래 명령어로 프로젝트 루트로 이동하여 실행해 주십시오:"
     echo "   cd \"$PROJECT_ROOT\" && bash run_worker.sh"
-    exit 1
+    if [ "$SOURCED" -eq 1 ]; then return 1; else exit 1; fi
 fi
 
 # 1. UART 시리얼 포트 udev 권한 영구 등록 (최초 1회 실행 시)
@@ -53,21 +57,33 @@ if [ ! -f ".venv/.installed" ]; then
         rm -rf .venv
     fi
 
+    echo "📦 가상환경(.venv)을 생성합니다..."
     python3 -m venv --system-site-packages --prompt venv .venv
-    .venv/bin/pip install --upgrade pip
-    .venv/bin/pip install -r requirements.txt
+
+    # 가상환경 프롬프트 이름 통일 ('(.venv)' -> '(venv)')
+    if [ -f ".venv/bin/activate" ]; then
+        sed -i "s/VIRTUAL_ENV_PROMPT='(.venv) '/VIRTUAL_ENV_PROMPT='(venv) '/g" ".venv/bin/activate" 2>/dev/null || true
+    fi
+
+    # [핵심] 시작부터 (venv) 활성화 후 설치 진행!
+    echo "⚡ 가상환경 (venv)을 활성화합니다..."
+    source .venv/bin/activate
+
+    echo "📥 활성화된 (venv) 가상환경에 패키지를 설치합니다..."
+    pip install --upgrade pip
+    pip install -r requirements.txt
     touch .venv/.installed
     echo "✅ 의존성 설치가 완료되었습니다!"
+else
+    # 이미 설치된 경우에도 시작부터 (venv) 활성화
+    if [ -f ".venv/bin/activate" ]; then
+        source .venv/bin/activate
+    fi
 fi
 
-# 가상환경 프롬프트 이름 통일 ('(.venv)' -> '(venv)')
-if [ -f ".venv/bin/activate" ]; then
-    sed -i "s/VIRTUAL_ENV_PROMPT='(.venv) '/VIRTUAL_ENV_PROMPT='(venv) '/g" ".venv/bin/activate" 2>/dev/null || true
-fi
-
-# 3. 터미널 시작 시 가상환경 (venv) 자동 활성화 설정 (~/.bashrc)
+# 3. 새 터미널 창에서도 가상환경 (venv)이 자동 활성화되도록 ~/.bashrc에 등록
 if [ -f "$PROJECT_ROOT/.venv/bin/activate" ] && ! grep -Fqs "$PROJECT_ROOT/.venv/bin/activate" "$HOME/.bashrc"; then
-    echo "🔗 터미널 시작 시 가상환경 (venv) 자동 활성화를 ~/.bashrc에 등록합니다..."
+    echo "🔗 새 터미널 창에서도 (venv)가 자동 활성화되도록 ~/.bashrc에 등록합니다..."
     cat << EOF >> "$HOME/.bashrc"
 
 # AI Standard Process System - 가상환경 자동 활성화
@@ -77,4 +93,16 @@ fi
 EOF
 fi
 
-exec "$PROJECT_ROOT/.venv/bin/python3" "$PROJECT_ROOT/project_worker/main.py" "$@"
+# 4. 프로그램 실행 및 (venv) 유지
+echo "🚀 작업자 프로그램을 실행합니다... (가상환경: ${VIRTUAL_ENV:-미활성화})"
+python "$PROJECT_ROOT/project_worker/main.py" "$@"
+
+if [ "$SOURCED" -eq 1 ]; then
+    # source로 실행한 경우: 이미 현재 터미널에 (venv)가 활성화되어 있으므로 그대로 유지
+    return 0
+else
+    # bash로 실행한 경우: 현재 터미널 창을 (venv)가 활성화된 최신 쉘로 즉시 교체하여 유지
+    echo ""
+    echo "🔄 (venv) 가상환경 상태를 계속 유지합니다..."
+    exec bash
+fi
