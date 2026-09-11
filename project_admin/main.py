@@ -1,8 +1,10 @@
 """Monitoring PC 관리자 프로그램의 실행 진입점입니다."""
 
 from pathlib import Path
+import signal
 import sys
 
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 import config
@@ -55,6 +57,9 @@ class MonitoringApplication:
                     pass
             self.admin_window.close()
             self.admin_window = None
+        if self.login_window is not None:
+            self.login_window.close()
+            self.login_window = None
         self.login_window = LoginWindow(self.database_manager)
         self.login_window.login_succeeded.connect(self.show_admin_window)
         self.login_window.show()
@@ -71,6 +76,16 @@ class MonitoringApplication:
             )
         self.admin_window.show()
         if self.login_window is not None:
+            # 즉시 객체를 파괴(close/None)하지 않고 숨김 처리하여
+            # 키 입력 이벤트 핸들러 반환 중 메모리 접근 오류(Segfault)를 원천 차단합니다.
+            self.login_window.hide()
+
+    def cleanup(self) -> None:
+        """프로그램 종료 시 남아 있는 윈도우들을 정리합니다."""
+        if self.admin_window is not None:
+            self.admin_window.close()
+            self.admin_window = None
+        if self.login_window is not None:
             self.login_window.close()
             self.login_window = None
 
@@ -80,6 +95,13 @@ def main() -> int:
     application = QApplication(sys.argv)
     application.setApplicationName("Monitoring PC")
     apply_theme(application)
+
+    signal.signal(signal.SIGINT, lambda *_: application.quit())
+    signal.signal(signal.SIGTERM, lambda *_: application.quit())
+    sig_timer = QTimer()
+    sig_timer.start(500)
+    sig_timer.timeout.connect(lambda: None)
+
     monitoring_application = MonitoringApplication()
     if not monitoring_application.start():
         return 1
@@ -90,6 +112,7 @@ def main() -> int:
     monitoring_application.set_worker_gateway(worker_gateway)
     worker_gateway.start()
     application.aboutToQuit.connect(worker_gateway.stop)
+    application.aboutToQuit.connect(monitoring_application.cleanup)
     return application.exec_()
 
 

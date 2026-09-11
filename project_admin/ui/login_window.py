@@ -1,6 +1,6 @@
 """관리자 로그인 창입니다."""
 
-from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal
+from PyQt5.QtCore import QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt5.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
@@ -206,6 +206,7 @@ class LoginWindow(QMainWindow):
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("비밀번호 입력")
         self.password_input.setEchoMode(QLineEdit.Password)
+        self.employee_id_input.returnPressed.connect(self.password_input.setFocus)
         self.password_input.returnPressed.connect(self.try_login)
         card_layout.addWidget(id_label)
         card_layout.addWidget(self.employee_id_input)
@@ -219,12 +220,13 @@ class LoginWindow(QMainWindow):
         self.error_label.setStyleSheet("color:#FF7D8A; font-size:12px;")
         card_layout.addWidget(self.error_label)
 
-        login_button = QPushButton("로그인")
-        login_button.setObjectName("primaryButton")
-        login_button.setMinimumHeight(46)
-        login_button.setDefault(True)
-        login_button.clicked.connect(self.try_login)
-        card_layout.addWidget(login_button)
+        self.login_button = QPushButton("로그인")
+        self.login_button.setObjectName("primaryButton")
+        self.login_button.setMinimumHeight(46)
+        self.login_button.setDefault(False)
+        self.login_button.setAutoDefault(False)
+        self.login_button.clicked.connect(self.try_login)
+        card_layout.addWidget(self.login_button)
         card_layout.addStretch()
         security_label = QLabel("안전한 비밀번호 암호화가 적용되어 있습니다.")
         security_label.setAlignment(Qt.AlignCenter)
@@ -260,4 +262,6 @@ class LoginWindow(QMainWindow):
             self.password_input.setFocus()
             return
         self.error_label.clear()
-        self.login_succeeded.emit(admin_info)
+        self.login_button.setEnabled(False)
+        # 키 입력 이벤트(keyPressEvent) 스택이 정상 반환된 직후 안전하게 화면 전환을 실행합니다.
+        QTimer.singleShot(0, lambda: self.login_succeeded.emit(admin_info))
