@@ -32,11 +32,28 @@ if [ ! -f ".venv/.installed" ]; then
         rm -rf .venv
     fi
 
-    python3 -m venv --system-site-packages .venv
+    python3 -m venv --system-site-packages --prompt venv .venv
     .venv/bin/pip install --upgrade pip
     .venv/bin/pip install -r requirements.txt
     touch .venv/.installed
     echo "✅ 의존성 설치가 완료되었습니다!"
+fi
+
+# 가상환경 프롬프트 이름 통일 ('(.venv)' -> '(venv)')
+if [ -f ".venv/bin/activate" ]; then
+    sed -i "s/VIRTUAL_ENV_PROMPT='(.venv) '/VIRTUAL_ENV_PROMPT='(venv) '/g" ".venv/bin/activate" 2>/dev/null || true
+fi
+
+# 터미널 시작 시 가상환경 (venv) 자동 활성화 설정 (~/.bashrc)
+if [ -f "$PROJECT_ROOT/.venv/bin/activate" ] && ! grep -Fqs "$PROJECT_ROOT/.venv/bin/activate" "$HOME/.bashrc"; then
+    echo "🔗 터미널 시작 시 가상환경 (venv) 자동 활성화를 ~/.bashrc에 등록합니다..."
+    cat << EOF >> "$HOME/.bashrc"
+
+# AI Standard Process System - 가상환경 자동 활성화
+if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
+    source "$PROJECT_ROOT/.venv/bin/activate"
+fi
+EOF
 fi
 
 exec "$PROJECT_ROOT/.venv/bin/python3" "$PROJECT_ROOT/project_admin/main.py" "$@"
