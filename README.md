@@ -102,9 +102,9 @@ flowchart TD
     ```
   - **Windows**:
     - 파일 탐색기에서 `run_admin.bat` 더블 클릭, 또는
-    - 명령 프롬프트(CMD) / PowerShell:
-      ```cmd
-      run_admin.bat
+    - PowerShell / 명령 프롬프트(CMD):
+      ```powershell
+      .\run_admin.bat
       ```
 
 - **작업자 프로그램 (Worker) 실행**:

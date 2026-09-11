@@ -87,9 +87,9 @@ bash run_admin.sh
 
 ### Windows
 - 파일 탐색기에서 [`run_admin.bat`](../run_admin.bat) **더블 클릭 (원클릭 실행)**, 또는
-- 명령 프롬프트(CMD) / PowerShell:
-  ```cmd
-  run_admin.bat
+- PowerShell / 명령 프롬프트(CMD):
+  ```powershell
+  .\run_admin.bat
   ```
 - (선택 사항) PowerShell 전용 스크립트 실행 시:
   ```powershell
