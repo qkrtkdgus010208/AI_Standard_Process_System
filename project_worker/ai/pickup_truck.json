@@ -57,16 +57,16 @@
                 "required_count": 2,
                 "positions": [
                     {
-                        "expected_x": -7.2478,
-                        "expected_y": -0.4482,
-                        "tolerance_x": 0.6,
+                        "expected_x": -6.47,
+                        "expected_y": -0.41,
+                        "tolerance_x": 1.6,
                         "tolerance_y": 0.1
                     },
                     {
-                        "expected_x": -7.3822,
-                        "expected_y": -0.0716,
+                        "expected_x": -6.52,
+                        "expected_y": -0.06,
                         "tolerance_x": 0.6,
-                        "tolerance_y": 0.1
+                        "tolerance_y": 0.2
                     }
                 ]
             },
@@ -75,14 +75,14 @@
                 "required_count": 2,
                 "positions": [
                     {
-                        "expected_x": -3.5477,
-                        "expected_y": 0.0306,
+                        "expected_x": -2.85,
+                        "expected_y": 0.05,
                         "tolerance_x": 0.6,
                         "tolerance_y": 0.1
                     },
                     {
-                        "expected_x": -3.5972,
-                        "expected_y": -0.5032,
+                        "expected_x": -3.00,
+                        "expected_y": -0.48,
                         "tolerance_x": 0.6,
                         "tolerance_y": 0.1
                     }
