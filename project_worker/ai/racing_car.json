@@ -57,14 +57,14 @@
                 "required_count": 2,
                 "positions": [
                     {
-                        "expected_x": -1.3361,
-                        "expected_y": -0.4098,
+                        "expected_x": -1.21,
+                        "expected_y": -0.401,
                         "tolerance_x": 0.1,
                         "tolerance_y": 0.1
                     },
                     {
-                        "expected_x": -1.1447,
-                        "expected_y": -0.0427,
+                        "expected_x": -1.01,
+                        "expected_y": -0.036,
                         "tolerance_x": 0.3,
                         "tolerance_y": 0.1
                     }
@@ -75,14 +75,14 @@
                 "required_count": 2,
                 "positions": [
                     {
-                        "expected_x": -5.0321,
-                        "expected_y": 0.0360,
+                        "expected_x": -4.48,
+                        "expected_y": 0.048,
                         "tolerance_x": 0.7,
                         "tolerance_y": 0.1
                     },
                     {
-                        "expected_x": -5.0749,
-                        "expected_y": -0.4966,
+                        "expected_x": -4.55,
+                        "expected_y": -0.484,
                         "tolerance_x": 0.4,
                         "tolerance_y": 0.1
                     }
@@ -90,8 +90,8 @@
             },
             {
                 "class": "rear_spoiler",
-                "expected_x": -7.8072,
-                "expected_y": -0.3623,
+                "expected_x": -6.99,
+                "expected_y": -0.353,
                 "tolerance_x": 0.9,
                 "tolerance_y": 0.2
             }
