@@ -535,9 +535,10 @@ flowchart TD
 > **모든 실행 명령어는 반드시 프로젝트 최상위 루트 디렉토리(`AI_Standard_Process_System/`)에서 수행해야 합니다.**  
 > 하위 폴더로 이동하여 실행하지 마십시오.
 
-### 6.1 중앙 관제 PC 실행 (Windows)
+### 6.1 중앙 관제 PC 실행 (Windows, project_admin)
 
-가상환경(`.venv`) 자동 생성 및 의존성 패키지가 자동 동기화되므로 루트 스크립트만 실행하면 됩니다.
+가상환경(`.venv`) 자동 생성 및 의존성 패키지가 자동 동기화되므로 루트 스크립트만 실행하면 됩니다.  
+서버 주소를 변경할 때는 ../project_worker/config.py 에 있는 MONITORING_PC_IP의 IP만 변경하면 됩니다.
 
 * **CMD (명령 프롬프트)**:
   ```cmd
@@ -548,7 +549,7 @@ flowchart TD
   .\run_admin.ps1
   ```
 
-### 6.2 작업자 단말 실행 (Jetson Orin Nano / Linux)
+### 6.2 작업자 단말 실행 (Jetson Orin Nano / Linux, project_worker)
 
 UART 권한(`dialout` udev 규칙), 카메라 유틸리티(`v4l-utils`), Python 가상환경이 자동 구성된 후 실행됩니다.
 
@@ -571,7 +572,7 @@ bash run_worker.sh
   python3 project_admin/reset_data.py
   ```
 
-### 6.4 STM32 펌웨어 빌드 및 플래싱
+### 6.4 STM32 펌웨어 빌드 및 플래싱 (project_stm)
 
 ```bash
 cd project_stm
